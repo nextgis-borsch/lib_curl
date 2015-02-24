@@ -845,7 +845,7 @@ foreach(CURL_TEST
 endforeach(CURL_TEST)
 
 if(HAVE_GETHOSTBYNAME_R_6 AND HAVE_GETHOSTBYNAME_R_5)
-    set(HAVE_GETHOSTBYNAME_R_5 OFF)
+    set(HAVE_GETHOSTBYNAME_R_5 0)
 endif()
 
 # Check for reentrant
