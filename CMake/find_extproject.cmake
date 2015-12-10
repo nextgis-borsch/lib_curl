@@ -62,20 +62,18 @@ function(find_extproject name)
     endif()
     
     # search CMAKE_INSTALL_PREFIX
-    string (REGEX MATCHALL "(^|;)-DBUILD_SHARED_LIB[A-Za-z0-9_]*" _matchedVars "${find_extproject_CMAKE_ARGS}")   
+    string (REGEX MATCHALL "(^|;)-DBUILD_SHARED_LIBS[A-Za-z0-9_]*" _matchedVars "${find_extproject_CMAKE_ARGS}")   
     unset(_matchedVars)
     list(LENGTH _matchedVars _list_size)    
     if(_list_size EQUAL 0)
-        list(APPEND find_extproject_CMAKE_ARGS -DBUILD_SHARED_LIB=${BUILD_SHARED_LIBS})
+        list(APPEND find_extproject_CMAKE_ARGS -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS})
     endif()
   
     ExternalProject_Add(${name}_EP
         GIT_REPOSITORY ${EP_URL}/${repo_name}
         CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
     )
-    
-    message(STATUS "CMAKE ARGS: ${find_extproject_CMAKE_ARGS}")
-    
+        
     find_package(Git)
     if(NOT GIT_FOUND)
       message(FATAL_ERROR "git is required")
