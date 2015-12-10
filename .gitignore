@@ -27,5 +27,9 @@
 *.out
 *.app
 
+# Build
+/build
+/inst
+
 #temp files
 *~

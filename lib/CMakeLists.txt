@@ -61,12 +61,12 @@ if(USE_ARES)
   include_directories(${CARES_INCLUDE_DIR})
 endif()
 
-if(CURL_STATICLIB)
-  # Static lib
-  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
-else()
+if(BUILD_SHARED_LIBS)
   # DLL / so dynamic lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC SHARED)
+else()
+  # Static lib
+  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
 endif()
 
 add_library(
@@ -75,7 +75,7 @@ add_library(
   ${HHEADERS} ${CSOURCES}
   )
 
-if(MSVC AND CURL_STATICLIB)
+if(MSVC AND NOT BUILD_SHARED_LIBS)
   set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
 endif()
 
@@ -92,10 +92,17 @@ set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
 set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
 if(WIN32)
-  if(NOT CURL_STATICLIB)
+  if(BUILD_SHARED_LIBS)
     # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
     set_target_properties(${LIB_NAME} PROPERTIES IMPORT_SUFFIX "_imp.lib")
   endif()
 endif()
 
 install(TARGETS ${LIB_NAME} DESTINATION lib)
+
+# todo: do we need some univesal cmake file for this?
+if(BUILD_SHARED_LIBS)
+    export(TARGETS ${LIB_NAME} FILE ${LIB_NAME}-exports.cmake)
+else()
+    export(TARGETS ${LIB_NAME} FILE ${LIB_NAME}static-exports.cmake)
+endif()
