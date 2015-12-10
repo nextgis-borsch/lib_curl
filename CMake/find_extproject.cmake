@@ -74,6 +74,8 @@ function(find_extproject name)
         CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
     )
     
+    message(STATUS "CMAKE ARGS: ${find_extproject_CMAKE_ARGS}")
+    
     find_package(Git)
     if(NOT GIT_FOUND)
       message(FATAL_ERROR "git is required")

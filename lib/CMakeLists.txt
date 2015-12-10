@@ -102,7 +102,7 @@ install(TARGETS ${LIB_NAME} DESTINATION lib)
 
 # todo: do we need some univesal cmake file for this?
 if(BUILD_SHARED_LIBS)
-    export(TARGETS ${LIB_NAME} FILE ../${LIB_NAME}-exports.cmake)
+    export(TARGETS ${LIB_NAME} FILE ${CURL_BINARY_DIR}/${LIB_NAME}-exports.cmake)
 else()
-    export(TARGETS ${LIB_NAME} FILE ../${LIB_NAME}static-exports.cmake)
+    export(TARGETS ${LIB_NAME} FILE ${CURL_BINARY_DIR}/${LIB_NAME}static-exports.cmake)
 endif()
