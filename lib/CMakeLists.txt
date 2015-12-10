@@ -98,7 +98,10 @@ if(WIN32)
   endif()
 endif()
 
-install(TARGETS ${LIB_NAME} DESTINATION lib)
+install(TARGETS ${LIB_NAME} 
+        RUNTIME DESTINATION bin
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib )
 
 # todo: do we need some univesal cmake file for this?
 if(BUILD_SHARED_LIBS)
@@ -106,3 +109,6 @@ if(BUILD_SHARED_LIBS)
 else()
     export(TARGETS ${LIB_NAME} FILE ${CURL_BINARY_DIR}/${LIB_NAME}static-exports.cmake)
 endif()
+
+set_property(TARGET ${LIB_NAME} PROPERTY WITH_ZLIB ON)
+set_property(TARGET ${LIB_NAME} PROPERTY WITH_ZLIB_INTERNAL OFF)
