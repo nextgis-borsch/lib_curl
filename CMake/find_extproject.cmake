@@ -73,15 +73,19 @@ function(find_extproject name)
         GIT_REPOSITORY ${EP_URL}/${repo_name}
         CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
     )
+    
+    find_package(Git)
+    if(NOT GIT_FOUND)
+      message(FATAL_ERROR "git is required")
+      return()
+    endif()
    
-    if(NOT EXISTS "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
-        find_package(Git)
-        if(NOT GIT_FOUND)
-          message(FATAL_ERROR "git is required")
-          return()
-        endif()
+    if(NOT EXISTS "${EP_BASE}/Source/${name}_EP/.git")
         execute_process(COMMAND ${GIT_EXECUTABLE} clone ${EP_URL}/${repo_name} ${name}_EP
            WORKING_DIRECTORY  ${EP_BASE}/Source)
+    else()    
+        execute_process(COMMAND ${GIT_EXECUTABLE} pull
+           WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)    
     endif()
      
     execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
