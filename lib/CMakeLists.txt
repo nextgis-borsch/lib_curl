@@ -91,9 +91,6 @@ set_target_properties(${LIB_NAME} PROPERTIES COMPILE_DEFINITIONS BUILDING_LIBCUR
 set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
 set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
-set_target_properties(${LIB_NAME} PROPERTIES WITH_ZLIB ON)
-set_target_properties(${LIB_NAME} PROPERTIES WITH_ZLIB_INTERNAL OFF)
-
 if(WIN32)
   if(BUILD_SHARED_LIBS)
     # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
