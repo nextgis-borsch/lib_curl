@@ -68,6 +68,17 @@ function(find_extproject name)
     if(_list_size EQUAL 0)
         list(APPEND find_extproject_CMAKE_ARGS -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS})
     endif()
+    
+    if(EXISTS ${EP_BASE}/Build/${name}_EP/ext_options.cmake) 
+        include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)
+    endif()
+    
+    get_cmake_property(_variableNames VARIABLES)
+    string (REGEX MATCHALL "(^|;)WITH_[A-Za-z0-9_]*" _matchedVars "${_variableNames}") 
+    foreach(_variableName ${_matchedVars})
+        message(STATUS "${_variableName}=${${_variableName}}")
+        list(APPEND find_extproject_CMAKE_ARGS -D${_variableName}=${${_variableName}})
+    endforeach()
   
     ExternalProject_Add(${name}_EP
         GIT_REPOSITORY ${EP_URL}/${repo_name}
