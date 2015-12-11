@@ -100,6 +100,9 @@ function(find_extproject name)
     set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${repo_project} PARENT_SCOPE)
     
     include_directories(${EP_BASE}/Build/${name}_EP ${EP_BASE}/Source/${name}_EP)
+    foreach (inc ${repo_include})
+        include_directories(${EP_BASE}/Build/${name}_EP/${inc} ${EP_BASE}/Source/${name}_EP/${inc})
+    endforeach ()    
     
     install( DIRECTORY ${EP_BASE}/Install/${name}_EP/ DESTINATION ${CMAKE_INSTALL_PREFIX} )
     

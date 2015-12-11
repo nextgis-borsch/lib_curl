@@ -33,3 +33,4 @@ else()
     set(repo_project zlibstatic)
 endif()
 
+set(repo_include)
