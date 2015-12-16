@@ -31,9 +31,19 @@ set(WITHOPT ${WITHOPT} "")
 
 function(find_anyproject name)
 
-    #cmake_parse_arguments(find_anyproject "${options}" ${ARGN} )
+    include (CMakeParseArguments)
+    set(options OPTIONAL REQUIRED)
+    set(oneValueArgs )
+    set(multiValueArgs CMAKE_ARGS)
+    cmake_parse_arguments(find_anyproject "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN} )  
     
-    set(WITHOPT "${WITHOPT}option(WITH_${name} \"Set ON to use ${name}\" ON)\n")
+    if (find_anyproject_REQUIRED)
+        set(_WITH_OPTION_ON TRUE)
+    else()  
+        set(_WITH_OPTION_ON FALSE)
+    endif()
+        
+    set(WITHOPT "${WITHOPT}option(WITH_${name} \"Set ON to use ${name}\" ${_WITH_OPTION_ON})\n")
     set(WITHOPT "${WITHOPT}option(WITH_${name}_INTERNAL \"Set ON to use internal ${name}\" OFF)\n" PARENT_SCOPE)
 
     option(WITH_${name} "Set ON to use ${name}" ON)
@@ -58,7 +68,9 @@ function(find_anyproject name)
 endfunction()
 
 function(target_link_extlibraries name)
-    add_dependencies(${name} ${DEPENDENCY_LIB})  
+    if(DEPENDENCY_LIB)
+        add_dependencies(${name} ${DEPENDENCY_LIB})  
+    endif()
     list(REMOVE_DUPLICATES TARGET_LINK_LIB)
     target_link_libraries(${name} ${TARGET_LINK_LIB})
     file(WRITE ${CMAKE_BINARY_DIR}/ext_options.cmake ${WITHOPT})
