@@ -93,7 +93,10 @@ function(find_extproject name)
    
     if(NOT EXISTS "${EP_BASE}/Source/${name}_EP/.git")
         execute_process(COMMAND ${GIT_EXECUTABLE} clone ${EP_URL}/${repo_name} ${name}_EP
-           WORKING_DIRECTORY  ${EP_BASE}/Source)
+           WORKING_DIRECTORY  ${EP_BASE}/Source RESULT_VARIABLE _rv)
+        if(${_rv} EQUAL 0) 
+            set(${name}_FOUND TRUE PARENT_SCOPE)  
+        endif()    
     else()    
         execute_process(COMMAND ${GIT_EXECUTABLE} pull
            WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)    
