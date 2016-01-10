@@ -103,7 +103,7 @@ function(find_extproject name)
         list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${EP_BASE}/Install/${name}_EP)
     endif()
     
-    # search CMAKE_INSTALL_PREFIX
+    # search BUILD_SHARED_LIBS
     string (REGEX MATCHALL "(^|;)-DBUILD_SHARED_LIBS[A-Za-z0-9_]*" _matchedVars "${find_extproject_CMAKE_ARGS}")   
     unset(_matchedVars)
     list(LENGTH _matchedVars _list_size)    
@@ -111,12 +111,20 @@ function(find_extproject name)
         list(APPEND find_extproject_CMAKE_ARGS -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS})
     endif()
     
+    # set some arguments          
+    list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_GENERATOR=${CMAKE_GENERATOR})    
+    if(CMAKE_BUILD_TYPE)
+        list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+    endif()        
+    # list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_CONFIGURATION_TYPES=${CMAKE_CONFIGURATION_TYPES})       
+    
     if(EXISTS ${EP_BASE}/Build/${name}_EP/ext_options.cmake)         
         include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)
         # add include into  ext_options.cmake
         set(WITHOPT "${WITHOPT}include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)\n" PARENT_SCOPE)    
     endif()
     
+    set(${name}_WITHARGS "BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}")
     get_cmake_property(_variableNames VARIABLES)
     string (REGEX MATCHALL "(^|;)WITH_[A-Za-z0-9_]*" _matchedVars "${_variableNames}") 
     foreach(_variableName ${_matchedVars})
@@ -124,6 +132,7 @@ function(find_extproject name)
             message(STATUS "${_variableName}=${${_variableName}}")
         endif()    
         list(APPEND find_extproject_CMAKE_ARGS -D${_variableName}=${${_variableName}})
+        set(${name}_WITHARGS ${${name}_WITHARGS} "${_variableName}=${${_variableName}}")
     endforeach()
     
         
@@ -146,6 +155,9 @@ function(find_extproject name)
         color_message("Git clone ${repo_name} ...")
         execute_process(COMMAND ${GIT_EXECUTABLE} clone ${EP_URL}/${repo_name} ${name}_EP
            WORKING_DIRECTORY  ${EP_BASE}/Source)
+        #execute_process(COMMAND ${GIT_EXECUTABLE} checkout master
+        #    WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)
+        file(WRITE ${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitclone-lastrun.txt "")
     else() 
         check_updates(${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitpull.txt ${PULL_UPDATE_PERIOD} CHECK_UPDATES)
         if(CHECK_UPDATES)
@@ -166,20 +178,28 @@ function(find_extproject name)
         else()
             set(HAS_CHANGES FALSE)  
         endif()        
+    endif()    
+    
+    if(NOT DEFINED ${name}_WITHARGS_TMP)
+        set(HAS_CHANGES TRUE)
+    elseif((${name}_WITHARGS EQUAL ${name}_WITHARGS_TMP) OR (${name}_WITHARGS STREQUAL ${name}_WITHARGS_TMP))
+    else()    
+        set(HAS_CHANGES TRUE)
     endif()
     
-    if(HAS_CHANGES)
+    if(HAS_CHANGES OR NOT EXISTS "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
         execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
            ${find_extproject_CMAKE_ARGS}
-           WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP RESULT_VARIABLE _rv)
-        
-        if(${_rv} EQUAL 0) 
-            string(TOUPPER ${name}_FOUND IS_FOUND)
-            set(${IS_FOUND} TRUE PARENT_SCOPE)  
-        endif()          
+           WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)  
     endif()
     include(${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake) 
     get_imported_targets(${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake IMPOTED_TARGETS)
+    set(${name}_WITHARGS_TMP ${${name}_WITHARGS} CACHE INTERNAL "external options" FORCE)
+    
+    if(EXISTS "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
+        string(TOUPPER ${name}_FOUND IS_FOUND)
+        set(${IS_FOUND} TRUE PARENT_SCOPE)
+    endif()
     
     add_dependencies(${IMPOTED_TARGETS} ${name}_EP)  
     
