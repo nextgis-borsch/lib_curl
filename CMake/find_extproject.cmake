@@ -56,6 +56,16 @@ function(color_message text)
     
 endfunction() 
 
+function(include_exports_path include_path)
+    #add to list imported 
+    list(FIND EXPORTS_PATHS ${include_path} PATH_INDEX)
+    if(PATH_INDEX EQUAL -1)
+        list(APPEND EXPORTS_PATHS "${include_path}")
+        set(EXPORTS_PATHS "${EXPORTS_PATHS}" PARENT_SCOPE)
+        include(${include_path})
+    endif()
+endfunction() 
+
 function(find_extproject name)
   
     include (CMakeParseArguments)
@@ -121,7 +131,12 @@ function(find_extproject name)
     if(EXISTS ${EP_BASE}/Build/${name}_EP/ext_options.cmake)         
         include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)
         # add include into  ext_options.cmake
-        set(WITHOPT "${WITHOPT}include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)\n" PARENT_SCOPE)    
+        set(WITHOPT "${WITHOPT}include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)\n" PARENT_SCOPE)   
+       
+        foreach(INCLUDE_EXPORT_PATH ${INCLUDE_EXPORTS_PATHS})   
+            include_exports_path(${INCLUDE_EXPORT_PATH})
+        endforeach()
+        unset(INCLUDE_EXPORT_PATH)
     endif()
     
     get_cmake_property(_variableNames VARIABLES)
@@ -168,14 +183,17 @@ function(find_extproject name)
 
     execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
        ${find_extproject_CMAKE_ARGS}
-       WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)  
-       
-    include(${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake) 
-    get_imported_targets(${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake IMPORTED_TARGETS)
+       WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)         
     
-    if(EXISTS "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
+    set(INCLUDE_EXPORT_PATH "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
+    
+    if(EXISTS ${INCLUDE_EXPORT_PATH})
+        get_imported_targets(${INCLUDE_EXPORT_PATH} IMPORTED_TARGETS)
         string(TOUPPER ${name}_FOUND IS_FOUND)
         set(${IS_FOUND} TRUE PARENT_SCOPE)
+           
+        #add to list imported
+        include_exports_path(${INCLUDE_EXPORT_PATH})
     endif()
     
     add_dependencies(${IMPORTED_TARGETS} ${name}_EP)  
@@ -185,6 +203,12 @@ function(find_extproject name)
     set(IMPORTED_TARGET_PATH)
     foreach(IMPORTED_TARGET ${IMPORTED_TARGETS})
         set(IMPORTED_TARGET_PATH ${IMPORTED_TARGET_PATH} $<TARGET_LINKER_FILE:${IMPORTED_TARGET}>) #${IMPORTED_TARGET}
+        if(NOT BUILD_SHARED_LIBS)
+            get_target_property(LINK_INTERFACE_LIBS "${IMPORTED_TARGET}" INTERFACE_LINK_LIBRARIES)
+            if(LINK_INTERFACE_LIBS) 
+                set(IMPORTED_TARGET_PATH ${IMPORTED_TARGET_PATH} ${LINK_INTERFACE_LIBS})
+            endif()
+        endif()
     endforeach()
     set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${IMPORTED_TARGET_PATH} PARENT_SCOPE)
     
@@ -194,5 +218,6 @@ function(find_extproject name)
     endforeach ()    
     
     install( DIRECTORY ${EP_BASE}/Install/${name}_EP/ DESTINATION ${CMAKE_INSTALL_PREFIX} )
-    
+        
+    set(EXPORTS_PATHS ${EXPORTS_PATHS} PARENT_SCOPE)
 endfunction()

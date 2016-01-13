@@ -23,6 +23,7 @@
 set(TARGET_LINK_LIB) # ${TARGET_LINK_LIB} ""
 set(DEPENDENCY_LIB) # ${DEPENDENCY_LIB} ""
 set(WITHOPT ${WITHOPT} "")
+set(EXPORTS_PATHS)
        
 function(find_anyproject name)
 
@@ -105,6 +106,7 @@ function(find_anyproject name)
         set(DEPENDENCY_LIB ${DEPENDENCY_LIB} PARENT_SCOPE)    
     endif()
     set(WITHOPT ${WITHOPT} PARENT_SCOPE)
+    set(EXPORTS_PATHS ${EXPORTS_PATHS} PARENT_SCOPE)
 endfunction()
 
 function(target_link_extlibraries name)
@@ -115,6 +117,15 @@ function(target_link_extlibraries name)
         list(REMOVE_DUPLICATES TARGET_LINK_LIB)
         target_link_libraries(${name} ${TARGET_LINK_LIB})
     endif()
-    file(WRITE ${CMAKE_BINARY_DIR}/ext_options.cmake ${WITHOPT})
+    write_ext_options()
 endfunction()
 
+function(write_ext_options)
+    if(NOT BUILD_SHARED_LIBS AND EXPORTS_PATHS)
+        foreach(EXPORT_PATH ${EXPORTS_PATHS})   
+            string(CONCAT EXPORTS_PATHS_STR ${EXPORTS_PATHS_STR} " \"${EXPORT_PATH}\"")
+        endforeach()
+        set(WITHOPT "${WITHOPT}set(INCLUDE_EXPORTS_PATHS \${INCLUDE_EXPORTS_PATHS} ${EXPORTS_PATHS_STR})\n")
+    endif()
+    file(WRITE ${CMAKE_BINARY_DIR}/ext_options.cmake ${WITHOPT})
+endfunction()
