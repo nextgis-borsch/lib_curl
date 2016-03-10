@@ -430,7 +430,7 @@ set(HAVE_ZLIB OFF)
 #  endif()
 #endif()
 
-include(find_anyproject)
+include(FindAnyProject)
 find_anyproject(ZLIB QUIET)
 if(ZLIB_FOUND OR WITH_ZLIB_INTERNAL)
     set(HAVE_ZLIB_H ON)
