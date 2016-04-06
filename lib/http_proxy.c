@@ -5,11 +5,11 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2014, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -35,10 +35,7 @@
 #include "progress.h"
 #include "non-ascii.h"
 #include "connect.h"
-
-#define _MPRINTF_REPLACE /* use our functions only */
-#include <curl/mprintf.h>
-
+#include "curl_printf.h"
 #include "curlx.h"
 
 #include "curl_memory.h"
@@ -71,10 +68,11 @@ CURLcode Curl_proxy_connect(struct connectdata *conn)
     conn->data->req.protop = &http_proxy;
     connkeep(conn, "HTTP proxy CONNECT");
     result = Curl_proxyCONNECT(conn, FIRSTSOCKET,
-                               conn->host.name, conn->remote_port);
+                               conn->host.name, conn->remote_port, FALSE);
     conn->data->req.protop = prot_save;
     if(CURLE_OK != result)
       return result;
+    Curl_safefree(conn->allocptr.proxyuserpwd);
 #else
     return CURLE_NOT_BUILT_IN;
 #endif
@@ -87,12 +85,16 @@ CURLcode Curl_proxy_connect(struct connectdata *conn)
  * Curl_proxyCONNECT() requires that we're connected to a HTTP proxy. This
  * function will issue the necessary commands to get a seamless tunnel through
  * this proxy. After that, the socket can be used just as a normal socket.
+ *
+ * 'blocking' set to TRUE means that this function will do the entire CONNECT
+ * + response in a blocking fashion. Should be avoided!
  */
 
 CURLcode Curl_proxyCONNECT(struct connectdata *conn,
                            int sockindex,
                            const char *hostname,
-                           int remote_port)
+                           int remote_port,
+                           bool blocking)
 {
   int subversion=0;
   struct SessionHandle *data=conn->data;
@@ -123,13 +125,11 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
       infof(data, "Establish HTTP proxy tunnel to %s:%hu\n",
             hostname, remote_port);
 
-      if(data->req.newurl) {
         /* This only happens if we've looped here due to authentication
            reasons, and we don't really use the newly cloned URL here
            then. Just free() it. */
-        free(data->req.newurl);
-        data->req.newurl = NULL;
-      }
+      free(data->req.newurl);
+      data->req.newurl = NULL;
 
       /* initialize a dynamic send-buffer */
       req_buffer = Curl_add_buffer_init();
@@ -139,7 +139,7 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
 
       host_port = aprintf("%s:%hu", hostname, remote_port);
       if(!host_port) {
-        free(req_buffer);
+        Curl_add_buffer_free(req_buffer);
         return CURLE_OUT_OF_MEMORY;
       }
 
@@ -150,7 +150,6 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
 
       if(!result) {
         char *host=(char *)"";
-        const char *proxyconn="";
         const char *useragent="";
         const char *http = (conn->proxytype == CURLPROXY_HTTP_1_0) ?
           "1.0" : "1.1";
@@ -159,7 +158,7 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
                   hostname, conn->bits.ipv6_ip?"]":"",
                   remote_port);
         if(!hostheader) {
-          free(req_buffer);
+          Curl_add_buffer_free(req_buffer);
           return CURLE_OUT_OF_MEMORY;
         }
 
@@ -167,13 +166,10 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
           host = aprintf("Host: %s\r\n", hostheader);
           if(!host) {
             free(hostheader);
-            free(req_buffer);
+            Curl_add_buffer_free(req_buffer);
             return CURLE_OUT_OF_MEMORY;
           }
         }
-        if(!Curl_checkProxyheaders(conn, "Proxy-Connection:"))
-          proxyconn = "Proxy-Connection: Keep-Alive\r\n";
-
         if(!Curl_checkProxyheaders(conn, "User-Agent:") &&
            data->set.str[STRING_USERAGENT])
           useragent = conn->allocptr.uagent;
@@ -183,15 +179,13 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
                            "CONNECT %s HTTP/%s\r\n"
                            "%s"  /* Host: */
                            "%s"  /* Proxy-Authorization */
-                           "%s"  /* User-Agent */
-                           "%s", /* Proxy-Connection */
+                           "%s", /* User-Agent */
                            hostheader,
                            http,
                            host,
                            conn->allocptr.proxyuserpwd?
                            conn->allocptr.proxyuserpwd:"",
-                           useragent,
-                           proxyconn);
+                           useragent);
 
         if(host && *host)
           free(host);
@@ -216,7 +210,7 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
           failf(data, "Failed sending CONNECT to proxy");
       }
 
-      Curl_safefree(req_buffer);
+      Curl_add_buffer_free(req_buffer);
       if(result)
         return result;
 
@@ -229,12 +223,14 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
       return CURLE_RECV_ERROR;
     }
 
-    if(0 == Curl_socket_ready(tunnelsocket, CURL_SOCKET_BAD, 0))
-      /* return so we'll be called again polling-style */
-      return CURLE_OK;
-    else {
-      DEBUGF(infof(data,
-                   "Read response immediately from proxy CONNECT\n"));
+    if(!blocking) {
+      if(0 == Curl_socket_ready(tunnelsocket, CURL_SOCKET_BAD, 0))
+        /* return so we'll be called again polling-style */
+        return CURLE_OK;
+      else {
+        DEBUGF(infof(data,
+               "Read response immediately from proxy CONNECT\n"));
+      }
     }
 
     /* at this point, the tunnel_connecting phase is over. */
@@ -285,7 +281,7 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
               /* proxy auth was requested and there was proxy auth available,
                  then deem this as "mere" proxy disconnect */
               conn->bits.proxy_connect_closed = TRUE;
-              infof(data, "Proxy CONNECT connection closed");
+              infof(data, "Proxy CONNECT connection closed\n");
             }
             else {
               error = SELECT_ERROR;
@@ -467,7 +463,7 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
 
                     result = Curl_http_input_auth(conn, proxy, auth);
 
-                    Curl_safefree(auth);
+                    free(auth);
 
                     if(result)
                       return result;
@@ -554,11 +550,8 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
       infof(data, "Connect me again please\n");
     }
     else {
-      if(data->req.newurl) {
-        /* this won't be used anymore for the CONNECT so free it now */
-        free(data->req.newurl);
-        data->req.newurl = NULL;
-      }
+      free(data->req.newurl);
+      data->req.newurl = NULL;
       /* failure, close this connection to avoid re-use */
       connclose(conn, "proxy CONNECT failure");
       Curl_closesocket(conn, conn->sock[sockindex]);

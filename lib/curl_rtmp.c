@@ -5,12 +5,12 @@
  *                | (__| |_| |  _ <| |___
  *                 \___|\___/|_| \_\_____|
  *
- * Copyright (C) 2012 - 2014, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 2012 - 2015, Daniel Stenberg, <daniel@haxx.se>, et al.
  * Copyright (C) 2010, Howard Chu, <hyc@highlandsun.com>
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -32,10 +32,6 @@
 #include "warnless.h"
 #include <curl/curl.h>
 #include <librtmp/rtmp.h>
-
-#define _MPRINTF_REPLACE /* use our functions only */
-#include <curl/mprintf.h>
-
 #include "curl_memory.h"
 /* The last #include file should be: */
 #include "memdebug.h"
@@ -59,7 +55,7 @@ static Curl_recv rtmp_recv;
 static Curl_send rtmp_send;
 
 /*
- * RTMP protocol handler.h, based on http://rtmpdump.mplayerhq.hu
+ * RTMP protocol handler.h, based on https://rtmpdump.mplayerhq.hu
  */
 
 const struct Curl_handler Curl_handler_rtmp = {
@@ -201,7 +197,7 @@ static CURLcode rtmp_setup_connection(struct connectdata *conn)
 static CURLcode rtmp_connect(struct connectdata *conn, bool *done)
 {
   RTMP *r = conn->proto.generic;
-  SET_RCVTIMEO(tv,10);
+  SET_RCVTIMEO(tv, 10);
 
   r->m_sb.sb_socket = conn->sock[FIRSTSOCKET];
 

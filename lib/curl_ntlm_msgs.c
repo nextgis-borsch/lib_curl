@@ -5,11 +5,11 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2014, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -41,7 +41,6 @@
 #include "curl_gethostname.h"
 #include "curl_multibyte.h"
 #include "warnless.h"
-#include "curl_memory.h"
 
 #include "vtls/vtls.h"
 
@@ -53,11 +52,10 @@
 #include "curl_ntlm_msgs.h"
 #include "curl_sasl.h"
 #include "curl_endian.h"
+#include "curl_printf.h"
 
-#define _MPRINTF_REPLACE /* use our functions only */
-#include <curl/mprintf.h>
-
-/* The last #include file should be: */
+/* The last #include files should be: */
+#include "curl_memory.h"
 #include "memdebug.h"
 
 /* "NTLMSSP" signature is always in ASCII regardless of the platform */
@@ -152,7 +150,7 @@ static void ntlm_print_hex(FILE *handle, const char *buf, size_t len)
 /*
  * ntlm_decode_type2_target()
  *
- * This is used to decode the "target info" in the ntlm type-2 message
+ * This is used to decode the "target info" in the NTLM type-2 message
  * received.
  *
  * Parameters:
@@ -160,7 +158,7 @@ static void ntlm_print_hex(FILE *handle, const char *buf, size_t len)
  * data      [in]     - The session handle.
  * buffer    [in]     - The decoded type-2 message.
  * size      [in]     - The input buffer size, at least 32 bytes.
- * ntlm      [in/out] - The ntlm data struct being used and modified.
+ * ntlm      [in/out] - The NTLM data struct being used and modified.
  *
  * Returns CURLE_OK on success.
  */
@@ -171,6 +169,10 @@ static CURLcode ntlm_decode_type2_target(struct SessionHandle *data,
 {
   unsigned short target_info_len = 0;
   unsigned int target_info_offset = 0;
+
+#if defined(CURL_DISABLE_VERBOSE_STRINGS)
+  (void) data;
+#endif
 
   if(size >= 48) {
     target_info_len = Curl_read16_le(&buffer[40]);
@@ -224,7 +226,7 @@ static CURLcode ntlm_decode_type2_target(struct SessionHandle *data,
  *
  * data     [in]     - The session handle.
  * type2msg [in]     - The base64 encoded type-2 message.
- * ntlm     [in/out] - The ntlm data struct being used and modified.
+ * ntlm     [in/out] - The NTLM data struct being used and modified.
  *
  * Returns CURLE_OK on success.
  */
@@ -334,7 +336,7 @@ static void unicodecpy(unsigned char *dest, const char *src, size_t length)
  *
  * userp   [in]     - The user name in the format User or Domain\User.
  * passdwp [in]     - The user's password.
- * ntlm    [in/out] - The ntlm data struct being used and modified.
+ * ntlm    [in/out] - The NTLM data struct being used and modified.
  * outptr  [in/out] - The address where a pointer to newly allocated memory
  *                    holding the result will be stored upon completion.
  * outlen  [out]    - The length of the output message.
@@ -454,7 +456,7 @@ CURLcode Curl_sasl_create_ntlm_type1_message(const char *userp,
  * data    [in]     - The session handle.
  * userp   [in]     - The user name in the format User or Domain\User.
  * passdwp [in]     - The user's password.
- * ntlm    [in/out] - The ntlm data struct being used and modified.
+ * ntlm    [in/out] - The NTLM data struct being used and modified.
  * outptr  [in/out] - The address where a pointer to newly allocated memory
  *                    holding the result will be stored upon completion.
  * outlen  [out]    - The length of the output message.
@@ -593,11 +595,11 @@ CURLcode Curl_sasl_create_ntlm_type3_message(struct SessionHandle *data,
     memcpy(tmp, &ntlm->nonce[0], 8);
     memcpy(tmp + 8, entropy, 8);
 
-    Curl_ssl_md5sum(tmp, 16, md5sum, MD5_DIGEST_LENGTH);
-
-    /* We shall only use the first 8 bytes of md5sum, but the des
-       code in Curl_ntlm_core_lm_resp only encrypt the first 8 bytes */
-    result = Curl_ntlm_core_mk_nt_hash(data, passwdp, ntbuffer);
+    result = Curl_ssl_md5sum(tmp, 16, md5sum, MD5_DIGEST_LENGTH);
+    if(!result)
+      /* We shall only use the first 8 bytes of md5sum, but the des code in
+         Curl_ntlm_core_lm_resp only encrypt the first 8 bytes */
+      result = Curl_ntlm_core_mk_nt_hash(data, passwdp, ntbuffer);
     if(result)
       return result;
 
@@ -760,7 +762,7 @@ CURLcode Curl_sasl_create_ntlm_type3_message(struct SessionHandle *data,
     ntlm_print_hex(stderr, (char *)&ntlmbuf[ntrespoff], ntresplen);
   });
 
-  Curl_safefree(ntlmv2resp);/* Free the dynamic buffer allocated for NTLMv2 */
+  free(ntlmv2resp);/* Free the dynamic buffer allocated for NTLMv2 */
 
 #endif
 

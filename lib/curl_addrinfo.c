@@ -9,7 +9,7 @@
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -50,14 +50,11 @@
 #include "curl_addrinfo.h"
 #include "inet_pton.h"
 #include "warnless.h"
-
-#define _MPRINTF_REPLACE /* use our functions only */
-#include <curl/mprintf.h>
-
+#include "curl_printf.h"
 #include "curl_memory.h"
+
 /* The last #include file should be: */
 #include "memdebug.h"
-
 
 /*
  * Curl_freeaddrinfo()
@@ -83,13 +80,8 @@ Curl_freeaddrinfo(Curl_addrinfo *cahead)
   Curl_addrinfo *ca;
 
   for(ca = cahead; ca != NULL; ca = canext) {
-
-    if(ca->ai_addr)
-      free(ca->ai_addr);
-
-    if(ca->ai_canonname)
-      free(ca->ai_canonname);
-
+    free(ca->ai_addr);
+    free(ca->ai_canonname);
     canext = ca->ai_next;
 
     free(ca);
@@ -529,7 +521,11 @@ void
 curl_dofreeaddrinfo(struct addrinfo *freethis,
                     int line, const char *source)
 {
+#ifdef USE_LWIPSOCK
+  lwip_freeaddrinfo(freethis);
+#else
   (freeaddrinfo)(freethis);
+#endif
   curl_memlog("ADDR %s:%d freeaddrinfo(%p)\n",
               source, line, (void *)freethis);
 }
@@ -552,7 +548,11 @@ curl_dogetaddrinfo(const char *hostname,
                    struct addrinfo **result,
                    int line, const char *source)
 {
+#ifdef USE_LWIPSOCK
+  int res=lwip_getaddrinfo(hostname, service, hints, result);
+#else
   int res=(getaddrinfo)(hostname, service, hints, result);
+#endif
   if(0 == res)
     /* success */
     curl_memlog("ADDR %s:%d getaddrinfo() = %p\n",
