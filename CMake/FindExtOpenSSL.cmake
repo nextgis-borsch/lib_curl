@@ -28,4 +28,4 @@ else()
     set(repo_project opensslstatic)
 endif()
 
-set(repo_include)
+set(repo_include openssl)

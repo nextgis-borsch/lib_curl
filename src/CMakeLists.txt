@@ -1,6 +1,6 @@
 # Modified by Mikhail Gusev (gusevmihs@gmail.com) for NextGIS Build System.
 
-set(EXE_NAME curl)
+set(EXE_NAME curlapp)
 
 if(USE_MANUAL)
   find_package(Perl REQUIRED)
