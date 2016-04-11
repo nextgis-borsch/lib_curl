@@ -64,7 +64,8 @@ include_directories(
   )
 
 #Build cURL executable
-target_link_libraries( ${EXE_NAME} ${LIB_NAME} ${CURL_LIBS})
+# TODO: do we need target_link_extlibraries() here?
+target_link_libraries(${EXE_NAME} ${LIB_NAME} ${CURL_LIBS})
 
 ################################################################################
 
