@@ -61,7 +61,8 @@ if(USE_ARES)
   include_directories(${CARES_INCLUDE_DIR})
 endif()
 
-if(CURL_STATICLIB)
+#if(CURL_STATICLIB)
+if(NOT BUILD_SHARED_LIBS)
   # Static lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
 else()
@@ -75,7 +76,7 @@ add_library(
   ${HHEADERS} ${CSOURCES}
   )
 
-if(MSVC AND CURL_STATICLIB)
+if(MSVC AND NOT BUILD_SHARED_LIBS) # CURL_STATICLIB)
   set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
 endif()
 
@@ -94,7 +95,7 @@ set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
 set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
 if(WIN32)
-  if(NOT CURL_STATICLIB)
+  if(BUILD_SHARED_LIBS)#NOT CURL_STATICLIB)
     # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
     set_target_properties(${LIB_NAME} PROPERTIES IMPORT_SUFFIX "_imp.lib")
   endif()

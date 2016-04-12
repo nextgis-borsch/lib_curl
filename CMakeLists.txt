@@ -85,14 +85,14 @@ include_directories( ${CURL_SOURCE_DIR}/include )
 option(BUILD_CURL_EXE "Set to ON to build cURL executable." ON)
 # Remove tests for now.
 #option(BUILD_CURL_TESTS "Set to ON to build cURL tests." ON)
-option(CURL_STATICLIB "Set to ON to build libcurl with static linking." OFF)
+#option(CURL_STATICLIB "Set to ON to build libcurl with static linking." OFF)
 option(ENABLE_ARES "Set to ON to enable c-ares support" OFF)
 option(ENABLE_THREADED_RESOLVER "Set to ON to enable POSIX threaded DNS lookup" OFF)
-
 option(ENABLE_DEBUG "Set to ON to enable curl debug features" OFF)
 option(ENABLE_CURLDEBUG "Set to ON to build with TrackMemory feature enabled" OFF)
 
-if(CURL_STATICLIB) # we do it here in order to reach library name in /src subdirectory
+#if(CURL_STATICLIB) # we do it here in order to reach library name in /src subdirectory
+if(NOT BUILD_SHARED_LIBS)
     set(LIB_NAME curlstatic)
 else()
     set(LIB_NAME curl)
@@ -1165,7 +1165,8 @@ set(CPPFLAG_CURL_STATICLIB  "")
 set(CURL_CA_BUNDLE          "")
 set(CURLVERSION             "${CURL_VERSION}")
 set(ENABLE_SHARED           "yes")
-if(CURL_STATICLIB)
+#if(CURL_STATICLIB)
+if(NOT BUILD_SHARED_LIBS)
   # Broken: LIBCURL_LIBS below; .a lib is not built
   message(WARNING "Static linking is broken!")
   set(ENABLE_STATIC         "no")
@@ -1232,7 +1233,8 @@ if(MSVC_VERSION EQUAL 1600)
 endif()
 
 
-if(CURL_STATICLIB)
+#if(CURL_STATICLIB)
+if(NOT BUILD_SHARED_LIBS)
     set(EXPORT_NAME ${PROJECT_NAME}static)
 else()
     set(EXPORT_NAME ${PROJECT_NAME})
