@@ -79,8 +79,9 @@ if(MSVC AND CURL_STATICLIB)
   set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
 endif()
 
+set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${CURL_LIBS})
 target_link_extlibraries(${LIB_NAME}) # only supported external libraries
-target_link_libraries(${LIB_NAME} ${CURL_LIBS})
+#target_link_libraries(${LIB_NAME} ${CURL_LIBS} ${TARGET_LINK_LIB})
 
 if(WIN32)
   add_definitions(-D_USRDLL)
