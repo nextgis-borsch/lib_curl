@@ -5,11 +5,11 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 2012 - 2014, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 2012 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -24,6 +24,7 @@
  * RFC4422 Simple Authentication and Security Layer (SASL)
  * RFC4616 PLAIN authentication
  * RFC6749 OAuth 2.0 Authorization Framework
+ * RFC7628 A Set of SASL Mechanisms for OAuth
  * Draft   LOGIN SASL Mechanism <draft-murchison-sasl-login-00.txt>
  *
  ***************************************************************************/
@@ -39,16 +40,34 @@
 #include "curl_hmac.h"
 #include "curl_sasl.h"
 #include "warnless.h"
-#include "curl_memory.h"
 #include "strtok.h"
+#include "strequal.h"
 #include "rawstr.h"
+#include "sendf.h"
 #include "non-ascii.h" /* included for Curl_convert_... prototypes */
+#include "curl_printf.h"
 
-#define _MPRINTF_REPLACE /* use our functions only */
-#include <curl/mprintf.h>
-
-/* The last #include file should be: */
+/* The last #include files should be: */
+#include "curl_memory.h"
 #include "memdebug.h"
+
+/* Supported mechanisms */
+const struct {
+  const char   *name;  /* Name */
+  size_t        len;   /* Name length */
+  unsigned int  bit;   /* Flag bit */
+} mechtable[] = {
+  { "LOGIN",        5,  SASL_MECH_LOGIN },
+  { "PLAIN",        5,  SASL_MECH_PLAIN },
+  { "CRAM-MD5",     8,  SASL_MECH_CRAM_MD5 },
+  { "DIGEST-MD5",   10, SASL_MECH_DIGEST_MD5 },
+  { "GSSAPI",       6,  SASL_MECH_GSSAPI },
+  { "EXTERNAL",     8,  SASL_MECH_EXTERNAL },
+  { "NTLM",         4,  SASL_MECH_NTLM },
+  { "XOAUTH2",      7,  SASL_MECH_XOAUTH2 },
+  { "OAUTHBEARER",  11, SASL_MECH_OAUTHBEARER },
+  { ZERO_NULL,      0,  0 }
+};
 
 #if !defined(CURL_DISABLE_CRYPTO_AUTH) && !defined(USE_WINDOWS_SSPI)
 #define DIGEST_QOP_VALUE_AUTH             (1 << 0)
@@ -58,9 +77,6 @@
 #define DIGEST_QOP_VALUE_STRING_AUTH      "auth"
 #define DIGEST_QOP_VALUE_STRING_AUTH_INT  "auth-int"
 #define DIGEST_QOP_VALUE_STRING_AUTH_CONF "auth-conf"
-
-#define DIGEST_MAX_VALUE_LENGTH           256
-#define DIGEST_MAX_CONTENT_LENGTH         1024
 
 /* The CURL_OUTPUT_DIGEST_CONV macro below is for non-ASCII machines.
    It converts digest text to ASCII so the MD5 will be correct for
@@ -73,13 +89,11 @@
     return result; \
   }
 
-/*
- * Return 0 on success and then the buffers are filled in fine.
- *
- * Non-zero means failure to parse.
- */
-static int sasl_digest_get_pair(const char *str, char *value, char *content,
-                                const char **endptr)
+#endif
+
+#if !defined(CURL_DISABLE_CRYPTO_AUTH)
+bool Curl_sasl_digest_get_pair(const char *str, char *value, char *content,
+                               const char **endptr)
 {
   int c;
   bool starts_with_quote = FALSE;
@@ -91,7 +105,7 @@ static int sasl_digest_get_pair(const char *str, char *value, char *content,
 
   if('=' != *str++)
     /* eek, no match */
-    return 1;
+    return FALSE;
 
   if('\"' == *str) {
     /* this starts with a quote so it must end with one as well! */
@@ -110,6 +124,7 @@ static int sasl_digest_get_pair(const char *str, char *value, char *content,
         continue;
       }
       break;
+
     case ',':
       if(!starts_with_quote) {
         /* this signals the end of the content if we didn't get a starting
@@ -118,11 +133,13 @@ static int sasl_digest_get_pair(const char *str, char *value, char *content,
         continue;
       }
       break;
+
     case '\r':
     case '\n':
       /* end of string */
       c = 0;
       continue;
+
     case '\"':
       if(!escape && starts_with_quote) {
         /* end of string */
@@ -131,16 +148,19 @@ static int sasl_digest_get_pair(const char *str, char *value, char *content,
       }
       break;
     }
+
     escape = FALSE;
     *content++ = *str;
   }
-  *content = 0;
 
+  *content = 0;
   *endptr = str;
 
-  return 0; /* all is fine! */
+  return TRUE;
 }
+#endif
 
+#if !defined(CURL_DISABLE_CRYPTO_AUTH) && !defined(USE_WINDOWS_SSPI)
 /* Convert md5 chunk to RFC2617 (section 3.1.3) -suitable ascii string*/
 static void sasl_digest_md5_to_ascii(unsigned char *source, /* 16 bytes */
                                      unsigned char *dest) /* 33 bytes */
@@ -234,7 +254,7 @@ static CURLcode sasl_digest_get_qop_values(const char *options, int *value)
     token = strtok_r(NULL, ",", &tok_buf);
   }
 
-  Curl_safefree(tmp);
+  free(tmp);
 
   return CURLE_OK;
 }
@@ -244,24 +264,24 @@ static CURLcode sasl_digest_get_qop_values(const char *options, int *value)
 /*
  * Curl_sasl_build_spn()
  *
- * This is used to build a SPN string in the format service/host.
+ * This is used to build a SPN string in the format service/instance.
  *
  * Parameters:
  *
- * serivce  [in] - The service type such as www, smtp, pop or imap.
- * host     [in] - The host name or realm.
+ * service  [in] - The service type such as www, smtp, pop or imap.
+ * instance [in] - The host name or realm.
  *
  * Returns a pointer to the newly allocated SPN.
  */
-char *Curl_sasl_build_spn(const char *service, const char *host)
+char *Curl_sasl_build_spn(const char *service, const char *instance)
 {
   /* Generate and return our SPN */
-  return aprintf("%s/%s", service, host);
+  return aprintf("%s/%s", service, instance);
 }
 #endif
 
 /*
- * Curl_sasl_create_plain_message()
+ * sasl_create_plain_message()
  *
  * This is used to generate an already encoded PLAIN message ready
  * for sending to the recipient.
@@ -277,10 +297,10 @@ char *Curl_sasl_build_spn(const char *service, const char *host)
  *
  * Returns CURLE_OK on success.
  */
-CURLcode Curl_sasl_create_plain_message(struct SessionHandle *data,
-                                        const char *userp,
-                                        const char *passwdp,
-                                        char **outptr, size_t *outlen)
+static CURLcode sasl_create_plain_message(struct SessionHandle *data,
+                                          const char *userp,
+                                          const char *passwdp,
+                                          char **outptr, size_t *outlen)
 {
   CURLcode result;
   char *plainauth;
@@ -307,12 +327,12 @@ CURLcode Curl_sasl_create_plain_message(struct SessionHandle *data,
   /* Base64 encode the reply */
   result = Curl_base64_encode(data, plainauth, 2 * ulen + plen + 2, outptr,
                               outlen);
-  Curl_safefree(plainauth);
+  free(plainauth);
   return result;
 }
 
 /*
- * Curl_sasl_create_login_message()
+ * sasl_create_login_message()
  *
  * This is used to generate an already encoded LOGIN message containing the
  * user name or password ready for sending to the recipient.
@@ -327,9 +347,9 @@ CURLcode Curl_sasl_create_plain_message(struct SessionHandle *data,
  *
  * Returns CURLE_OK on success.
  */
-CURLcode Curl_sasl_create_login_message(struct SessionHandle *data,
-                                        const char *valuep, char **outptr,
-                                        size_t *outlen)
+static CURLcode sasl_create_login_message(struct SessionHandle *data,
+                                          const char *valuep, char **outptr,
+                                          size_t *outlen)
 {
   size_t vlen = strlen(valuep);
 
@@ -349,9 +369,33 @@ CURLcode Curl_sasl_create_login_message(struct SessionHandle *data,
   return Curl_base64_encode(data, valuep, vlen, outptr, outlen);
 }
 
+/*
+ * sasl_create_external_message()
+ *
+ * This is used to generate an already encoded EXTERNAL message containing
+ * the user name ready for sending to the recipient.
+ *
+ * Parameters:
+ *
+ * data    [in]     - The session handle.
+ * user    [in]     - The user name.
+ * outptr  [in/out] - The address where a pointer to newly allocated memory
+ *                    holding the result will be stored upon completion.
+ * outlen  [out]    - The length of the output message.
+ *
+ * Returns CURLE_OK on success.
+ */
+static CURLcode sasl_create_external_message(struct SessionHandle *data,
+                                             const char *user, char **outptr,
+                                             size_t *outlen)
+{
+  /* This is the same formatting as the login message. */
+  return sasl_create_login_message(data, user, outptr, outlen);
+}
+
 #ifndef CURL_DISABLE_CRYPTO_AUTH
- /*
- * Curl_sasl_decode_cram_md5_message()
+/*
+ * sasl_decode_cram_md5_message()
  *
  * This is used to decode an already encoded CRAM-MD5 challenge message.
  *
@@ -364,8 +408,8 @@ CURLcode Curl_sasl_create_login_message(struct SessionHandle *data,
  *
  * Returns CURLE_OK on success.
  */
-CURLcode Curl_sasl_decode_cram_md5_message(const char *chlg64, char **outptr,
-                                           size_t *outlen)
+static CURLcode sasl_decode_cram_md5_message(const char *chlg64, char **outptr,
+                                             size_t *outlen)
 {
   CURLcode result = CURLE_OK;
   size_t chlg64len = strlen(chlg64);
@@ -377,11 +421,11 @@ CURLcode Curl_sasl_decode_cram_md5_message(const char *chlg64, char **outptr,
   if(chlg64len && *chlg64 != '=')
     result = Curl_base64_decode(chlg64, (unsigned char **) outptr, outlen);
 
-    return result;
- }
+  return result;
+}
 
- /*
- * Curl_sasl_create_cram_md5_message()
+/*
+ * sasl_create_cram_md5_message()
  *
  * This is used to generate an already encoded CRAM-MD5 response message ready
  * for sending to the recipient.
@@ -398,11 +442,11 @@ CURLcode Curl_sasl_decode_cram_md5_message(const char *chlg64, char **outptr,
  *
  * Returns CURLE_OK on success.
  */
-CURLcode Curl_sasl_create_cram_md5_message(struct SessionHandle *data,
-                                           const char *chlg,
-                                           const char *userp,
-                                           const char *passwdp,
-                                           char **outptr, size_t *outlen)
+static CURLcode sasl_create_cram_md5_message(struct SessionHandle *data,
+                                             const char *chlg,
+                                             const char *userp,
+                                             const char *passwdp,
+                                             char **outptr, size_t *outlen)
 {
   CURLcode result = CURLE_OK;
   size_t chlglen = 0;
@@ -430,17 +474,17 @@ CURLcode Curl_sasl_create_cram_md5_message(struct SessionHandle *data,
 
   /* Generate the response */
   response = aprintf(
-      "%s %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-           userp, digest[0], digest[1], digest[2], digest[3], digest[4],
-           digest[5], digest[6], digest[7], digest[8], digest[9], digest[10],
-           digest[11], digest[12], digest[13], digest[14], digest[15]);
+    "%s %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+    userp, digest[0], digest[1], digest[2], digest[3], digest[4],
+    digest[5], digest[6], digest[7], digest[8], digest[9], digest[10],
+    digest[11], digest[12], digest[13], digest[14], digest[15]);
   if(!response)
     return CURLE_OUT_OF_MEMORY;
 
   /* Base64 encode the response */
   result = Curl_base64_encode(data, response, 0, outptr, outlen);
 
-  Curl_safefree(response);
+  free(response);
 
   return result;
 }
@@ -490,7 +534,7 @@ static CURLcode sasl_decode_digest_md5_message(const char *chlg64,
 
   /* Retrieve nonce string from the challenge */
   if(!sasl_digest_get_key_value((char *)chlg, "nonce=\"", nonce, nlen, '\"')) {
-    Curl_safefree(chlg);
+    free(chlg);
     return CURLE_BAD_CONTENT_ENCODING;
   }
 
@@ -502,17 +546,17 @@ static CURLcode sasl_decode_digest_md5_message(const char *chlg64,
 
   /* Retrieve algorithm string from the challenge */
   if(!sasl_digest_get_key_value((char *)chlg, "algorithm=", alg, alen, ',')) {
-    Curl_safefree(chlg);
+    free(chlg);
     return CURLE_BAD_CONTENT_ENCODING;
   }
 
   /* Retrieve qop-options string from the challenge */
   if(!sasl_digest_get_key_value((char *)chlg, "qop=\"", qop, qlen, '\"')) {
-    Curl_safefree(chlg);
+    free(chlg);
     return CURLE_BAD_CONTENT_ENCODING;
   }
 
-  Curl_safefree(chlg);
+  free(chlg);
 
   return CURLE_OK;
 }
@@ -634,7 +678,7 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   /* Calculate H(A2) */
   ctxt = Curl_MD5_init(Curl_DIGEST_MD5);
   if(!ctxt) {
-    Curl_safefree(spn);
+    free(spn);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -652,7 +696,7 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   /* Now calculate the response hash */
   ctxt = Curl_MD5_init(Curl_DIGEST_MD5);
   if(!ctxt) {
-    Curl_safefree(spn);
+    free(spn);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -685,14 +729,14 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
                      "qop=%s",
                      userp, realm, nonce,
                      cnonce, nonceCount, spn, resp_hash_hex, qop);
-  Curl_safefree(spn);
+  free(spn);
   if(!response)
     return CURLE_OUT_OF_MEMORY;
 
   /* Base64 encode the response */
   result = Curl_base64_encode(data, response, 0, outptr, outlen);
 
-  Curl_safefree(response);
+  free(response);
 
   return result;
 }
@@ -735,8 +779,9 @@ CURLcode Curl_sasl_decode_digest_http_message(const char *chlg,
       chlg++;
 
     /* Extract a value=content pair */
-    if(!sasl_digest_get_pair(chlg, value, content, &chlg)) {
+    if(Curl_sasl_digest_get_pair(chlg, value, content, &chlg)) {
       if(Curl_raw_equal(value, "nonce")) {
+        free(digest->nonce);
         digest->nonce = strdup(content);
         if(!digest->nonce)
           return CURLE_OUT_OF_MEMORY;
@@ -748,11 +793,13 @@ CURLcode Curl_sasl_decode_digest_http_message(const char *chlg,
         }
       }
       else if(Curl_raw_equal(value, "realm")) {
+        free(digest->realm);
         digest->realm = strdup(content);
         if(!digest->realm)
           return CURLE_OUT_OF_MEMORY;
       }
       else if(Curl_raw_equal(value, "opaque")) {
+        free(digest->opaque);
         digest->opaque = strdup(content);
         if(!digest->opaque)
           return CURLE_OUT_OF_MEMORY;
@@ -760,7 +807,7 @@ CURLcode Curl_sasl_decode_digest_http_message(const char *chlg,
       else if(Curl_raw_equal(value, "qop")) {
         char *tok_buf;
         /* Tokenize the list and choose auth if possible, use a temporary
-            clone of the buffer since strtok_r() ruins it */
+           clone of the buffer since strtok_r() ruins it */
         tmp = strdup(content);
         if(!tmp)
           return CURLE_OUT_OF_MEMORY;
@@ -780,17 +827,20 @@ CURLcode Curl_sasl_decode_digest_http_message(const char *chlg,
 
         /* Select only auth or auth-int. Otherwise, ignore */
         if(foundAuth) {
+          free(digest->qop);
           digest->qop = strdup(DIGEST_QOP_VALUE_STRING_AUTH);
           if(!digest->qop)
             return CURLE_OUT_OF_MEMORY;
         }
         else if(foundAuthInt) {
+          free(digest->qop);
           digest->qop = strdup(DIGEST_QOP_VALUE_STRING_AUTH_INT);
           if(!digest->qop)
             return CURLE_OUT_OF_MEMORY;
         }
       }
       else if(Curl_raw_equal(value, "algorithm")) {
+        free(digest->algorithm);
         digest->algorithm = strdup(content);
         if(!digest->algorithm)
           return CURLE_OUT_OF_MEMORY;
@@ -889,14 +939,14 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
   }
 
   /*
-    if the algorithm is "MD5" or unspecified (which then defaults to MD5):
+    If the algorithm is "MD5" or unspecified (which then defaults to MD5):
 
-    A1 = unq(username-value) ":" unq(realm-value) ":" passwd
+      A1 = unq(username-value) ":" unq(realm-value) ":" passwd
 
-    if the algorithm is "MD5-sess" then:
+    If the algorithm is "MD5-sess" then:
 
-    A1 = H( unq(username-value) ":" unq(realm-value) ":" passwd )
-         ":" unq(nonce-value) ":" unq(cnonce-value)
+      A1 = H( unq(username-value) ":" unq(realm-value) ":" passwd ) ":"
+            unq(nonce-value) ":" unq(cnonce-value)
   */
 
   md5this = (unsigned char *)
@@ -906,7 +956,7 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
 
   CURL_OUTPUT_DIGEST_CONV(data, md5this); /* convert on non-ASCII machines */
   Curl_md5it(md5buf, md5this);
-  Curl_safefree(md5this);
+  free(md5this);
   sasl_digest_md5_to_ascii(md5buf, ha1);
 
   if(digest->algo == CURLDIGESTALGO_MD5SESS) {
@@ -917,18 +967,18 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
 
     CURL_OUTPUT_DIGEST_CONV(data, tmp); /* convert on non-ASCII machines */
     Curl_md5it(md5buf, (unsigned char *)tmp);
-    Curl_safefree(tmp);
+    free(tmp);
     sasl_digest_md5_to_ascii(md5buf, ha1);
   }
 
   /*
     If the "qop" directive's value is "auth" or is unspecified, then A2 is:
 
-      A2       = Method ":" digest-uri-value
+      A2 = Method ":" digest-uri-value
 
-          If the "qop" value is "auth-int", then A2 is:
+    If the "qop" value is "auth-int", then A2 is:
 
-      A2       = Method ":" digest-uri-value ":" H(entity-body)
+      A2 = Method ":" digest-uri-value ":" H(entity-body)
 
     (The "Method" value is the HTTP request method as specified in section
     5.1.1 of RFC 2616)
@@ -941,7 +991,7 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
        TODO: replace md5 of empty string with entity-body for PUT/POST */
     unsigned char *md5this2 = (unsigned char *)
       aprintf("%s:%s", md5this, "d41d8cd98f00b204e9800998ecf8427e");
-    Curl_safefree(md5this);
+    free(md5this);
     md5this = md5this2;
   }
 
@@ -950,7 +1000,7 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
 
   CURL_OUTPUT_DIGEST_CONV(data, md5this); /* convert on non-ASCII machines */
   Curl_md5it(md5buf, md5this);
-  Curl_safefree(md5this);
+  free(md5this);
   sasl_digest_md5_to_ascii(md5buf, ha2);
 
   if(digest->qop) {
@@ -974,21 +1024,21 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
 
   CURL_OUTPUT_DIGEST_CONV(data, md5this); /* convert on non-ASCII machines */
   Curl_md5it(md5buf, md5this);
-  Curl_safefree(md5this);
+  free(md5this);
   sasl_digest_md5_to_ascii(md5buf, request_digest);
 
   /* for test case 64 (snooped from a Mozilla 1.3a request)
 
-    Authorization: Digest username="testuser", realm="testrealm", \
-    nonce="1053604145", uri="/64", response="c55f7f30d83d774a3d2dcacf725abaca"
+     Authorization: Digest username="testuser", realm="testrealm",      \
+     nonce="1053604145", uri="/64", response="c55f7f30d83d774a3d2dcacf725abaca"
 
-    Digest parameters are all quoted strings.  Username which is provided by
-    the user will need double quotes and backslashes within it escaped.  For
-    the other fields, this shouldn't be an issue.  realm, nonce, and opaque
-    are copied as is from the server, escapes and all.  cnonce is generated
-    with web-safe characters.  uri is already percent encoded.  nc is 8 hex
-    characters.  algorithm and qop with standard values only contain web-safe
-    chracters.
+     Digest parameters are all quoted strings.  Username which is provided by
+     the user will need double quotes and backslashes within it escaped.  For
+     the other fields, this shouldn't be an issue.  realm, nonce, and opaque
+     are copied as is from the server, escapes and all.  cnonce is generated
+     with web-safe characters.  uri is already percent encoded.  nc is 8 hex
+     characters.  algorithm and qop with standard values only contain web-safe
+     characters.
   */
   userp_quoted = sasl_digest_string_quoted(userp);
   if(!userp_quoted)
@@ -1029,7 +1079,7 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
                        uripath,
                        request_digest);
   }
-  Curl_safefree(userp_quoted);
+  free(userp_quoted);
   if(!response)
     return CURLE_OUT_OF_MEMORY;
 
@@ -1092,11 +1142,11 @@ void Curl_sasl_digest_cleanup(struct digestdata *digest)
 /*
  * Curl_sasl_ntlm_cleanup()
  *
- * This is used to clean up the ntlm specific data.
+ * This is used to clean up the NTLM specific data.
  *
  * Parameters:
  *
- * ntlm    [in/out] - The ntlm data struct being cleaned up.
+ * ntlm    [in/out] - The NTLM data struct being cleaned up.
  *
  */
 void Curl_sasl_ntlm_cleanup(struct ntlmdata *ntlm)
@@ -1110,7 +1160,7 @@ void Curl_sasl_ntlm_cleanup(struct ntlmdata *ntlm)
 #endif /* USE_NTLM && !USE_WINDOWS_SSPI*/
 
 /*
- * Curl_sasl_create_xoauth2_message()
+ * sasl_create_oauth_bearer_message()
  *
  * This is used to generate an already encoded OAuth 2.0 message ready for
  * sending to the recipient.
@@ -1119,6 +1169,8 @@ void Curl_sasl_ntlm_cleanup(struct ntlmdata *ntlm)
  *
  * data    [in]     - The session handle.
  * user    [in]     - The user name.
+ * host    [in]     - The host name (for OAUTHBEARER).
+ * port    [in]     - The port (for OAUTHBEARER when not Port 80).
  * bearer  [in]     - The bearer token.
  * outptr  [in/out] - The address where a pointer to newly allocated memory
  *                    holding the result will be stored upon completion.
@@ -1126,23 +1178,32 @@ void Curl_sasl_ntlm_cleanup(struct ntlmdata *ntlm)
  *
  * Returns CURLE_OK on success.
  */
-CURLcode Curl_sasl_create_xoauth2_message(struct SessionHandle *data,
-                                          const char *user,
-                                          const char *bearer,
-                                          char **outptr, size_t *outlen)
+static CURLcode sasl_create_oauth_bearer_message(struct SessionHandle *data,
+                                                 const char *user,
+                                                 const char *host,
+                                                 const long port,
+                                                 const char *bearer,
+                                                 char **outptr, size_t *outlen)
 {
   CURLcode result = CURLE_OK;
-  char *xoauth = NULL;
+  char *oauth = NULL;
 
   /* Generate the message */
-  xoauth = aprintf("user=%s\1auth=Bearer %s\1\1", user, bearer);
-  if(!xoauth)
+  if(host == NULL && (port == 0 || port == 80))
+    oauth = aprintf("user=%s\1auth=Bearer %s\1\1", user, bearer);
+  else if(port == 0 || port == 80)
+    oauth = aprintf("user=%s\1host=%s\1auth=Bearer %s\1\1", user, host,
+                    bearer);
+  else
+    oauth = aprintf("user=%s\1host=%s\1port=%ld\1auth=Bearer %s\1\1", user,
+                    host, port, bearer);
+  if(!oauth)
     return CURLE_OUT_OF_MEMORY;
 
   /* Base64 encode the reply */
-  result = Curl_base64_encode(data, xoauth, strlen(xoauth), outptr, outlen);
+  result = Curl_base64_encode(data, oauth, strlen(oauth), outptr, outlen);
 
-  Curl_safefree(xoauth);
+  free(oauth);
 
   return result;
 }
@@ -1168,7 +1229,7 @@ void Curl_sasl_cleanup(struct connectdata *conn, unsigned int authused)
 #endif
 
 #if defined(USE_NTLM)
-  /* Cleanup the ntlm structure */
+  /* Cleanup the NTLM structure */
   if(authused == SASL_MECH_NTLM) {
     Curl_sasl_ntlm_cleanup(&conn->ntlm);
   }
@@ -1179,4 +1240,503 @@ void Curl_sasl_cleanup(struct connectdata *conn, unsigned int authused)
   (void)conn;
   (void)authused;
 #endif
+}
+
+/*
+ * Curl_sasl_decode_mech()
+ *
+ * Convert a SASL mechanism name into a token.
+ *
+ * Parameters:
+ *
+ * ptr    [in]     - The mechanism string.
+ * maxlen [in]     - Maximum mechanism string length.
+ * len    [out]    - If not NULL, effective name length.
+ *
+ * Returns the SASL mechanism token or 0 if no match.
+ */
+unsigned int Curl_sasl_decode_mech(const char *ptr, size_t maxlen, size_t *len)
+{
+  unsigned int i;
+  char c;
+
+  for(i = 0; mechtable[i].name; i++) {
+    if(maxlen >= mechtable[i].len &&
+       !memcmp(ptr, mechtable[i].name, mechtable[i].len)) {
+      if(len)
+        *len = mechtable[i].len;
+
+      if(maxlen == mechtable[i].len)
+        return mechtable[i].bit;
+
+      c = ptr[mechtable[i].len];
+      if(!ISUPPER(c) && !ISDIGIT(c) && c != '-' && c != '_')
+        return mechtable[i].bit;
+    }
+  }
+
+  return 0;
+}
+
+/*
+ * Curl_sasl_parse_url_auth_option()
+ *
+ * Parse the URL login options.
+ */
+CURLcode Curl_sasl_parse_url_auth_option(struct SASL *sasl,
+                                         const char *value, size_t len)
+{
+  CURLcode result = CURLE_OK;
+  unsigned int mechbit;
+  size_t mechlen;
+
+  if(!len)
+    return CURLE_URL_MALFORMAT;
+
+  if(sasl->resetprefs) {
+    sasl->resetprefs = FALSE;
+    sasl->prefmech = SASL_AUTH_NONE;
+  }
+
+  if(strnequal(value, "*", len))
+    sasl->prefmech = SASL_AUTH_DEFAULT;
+  else {
+    mechbit = Curl_sasl_decode_mech(value, len, &mechlen);
+    if(mechbit && mechlen == len)
+      sasl->prefmech |= mechbit;
+    else
+      result = CURLE_URL_MALFORMAT;
+  }
+
+  return result;
+}
+
+/*
+ * Curl_sasl_init()
+ *
+ * Initializes the SASL structure.
+ */
+void Curl_sasl_init(struct SASL *sasl, const struct SASLproto *params)
+{
+  sasl->params = params;           /* Set protocol dependent parameters */
+  sasl->state = SASL_STOP;         /* Not yet running */
+  sasl->authmechs = SASL_AUTH_NONE; /* No known authentication mechanism yet */
+  sasl->prefmech = SASL_AUTH_DEFAULT; /* Prefer all mechanisms */
+  sasl->authused = SASL_AUTH_NONE; /* No the authentication mechanism used */
+  sasl->resetprefs = TRUE;         /* Reset prefmech upon AUTH parsing. */
+  sasl->mutual_auth = FALSE;       /* No mutual authentication (GSSAPI only) */
+  sasl->force_ir = FALSE;          /* Respect external option */
+}
+
+/*
+ * state()
+ *
+ * This is the ONLY way to change SASL state!
+ */
+static void state(struct SASL *sasl, struct connectdata *conn,
+                  saslstate newstate)
+{
+#if defined(DEBUGBUILD) && !defined(CURL_DISABLE_VERBOSE_STRINGS)
+  /* for debug purposes */
+  static const char * const names[]={
+    "STOP",
+    "PLAIN",
+    "LOGIN",
+    "LOGIN_PASSWD",
+    "EXTERNAL",
+    "CRAMMD5",
+    "DIGESTMD5",
+    "DIGESTMD5_RESP",
+    "NTLM",
+    "NTLM_TYPE2MSG",
+    "GSSAPI",
+    "GSSAPI_TOKEN",
+    "GSSAPI_NO_DATA",
+    "OAUTH2",
+    "OAUTH2_RESP",
+    "CANCEL",
+    "FINAL",
+    /* LAST */
+  };
+
+  if(sasl->state != newstate)
+    infof(conn->data, "SASL %p state change from %s to %s\n",
+          (void *)sasl, names[sasl->state], names[newstate]);
+#else
+  (void) conn;
+#endif
+
+  sasl->state = newstate;
+}
+
+/*
+ * Curl_sasl_can_authenticate()
+ *
+ * Check if we have enough auth data and capabilities to authenticate.
+ */
+bool Curl_sasl_can_authenticate(struct SASL *sasl, struct connectdata *conn)
+{
+  /* Have credentials been provided? */
+  if(conn->bits.user_passwd)
+    return TRUE;
+
+  /* EXTERNAL can authenticate without a user name and/or password */
+  if(sasl->authmechs & sasl->prefmech & SASL_MECH_EXTERNAL)
+    return TRUE;
+
+  return FALSE;
+}
+
+/*
+ * Curl_sasl_start()
+ *
+ * Calculate the required login details for SASL authentication.
+ */
+CURLcode Curl_sasl_start(struct SASL *sasl, struct connectdata *conn,
+                         bool force_ir, saslprogress *progress)
+{
+  CURLcode result = CURLE_OK;
+  struct SessionHandle *data = conn->data;
+  unsigned int enabledmechs;
+  const char *mech = NULL;
+  char *resp = NULL;
+  size_t len = 0;
+  saslstate state1 = SASL_STOP;
+  saslstate state2 = SASL_FINAL;
+
+  sasl->force_ir = force_ir;    /* Latch for future use */
+  sasl->authused = 0;           /* No mechanism used yet */
+  enabledmechs = sasl->authmechs & sasl->prefmech;
+  *progress = SASL_IDLE;
+
+  /* Calculate the supported authentication mechanism, by decreasing order of
+     security, as well as the initial response where appropriate */
+  if((enabledmechs & SASL_MECH_EXTERNAL) && !conn->passwd[0]) {
+    mech = SASL_MECH_STRING_EXTERNAL;
+    state1 = SASL_EXTERNAL;
+    sasl->authused = SASL_MECH_EXTERNAL;
+
+    if(force_ir || data->set.sasl_ir)
+      result = sasl_create_external_message(data, conn->user, &resp, &len);
+  }
+  else if(conn->bits.user_passwd) {
+#if defined(USE_KERBEROS5)
+    if(enabledmechs & SASL_MECH_GSSAPI) {
+      sasl->mutual_auth = FALSE; /* TODO: Calculate mutual authentication */
+      mech = SASL_MECH_STRING_GSSAPI;
+      state1 = SASL_GSSAPI;
+      state2 = SASL_GSSAPI_TOKEN;
+      sasl->authused = SASL_MECH_GSSAPI;
+
+      if(force_ir || data->set.sasl_ir)
+        result = Curl_sasl_create_gssapi_user_message(data, conn->user,
+                                                      conn->passwd,
+                                                      sasl->params->service,
+                                                      sasl->mutual_auth,
+                                                      NULL, &conn->krb5,
+                                                      &resp, &len);
+    }
+    else
+#endif
+#ifndef CURL_DISABLE_CRYPTO_AUTH
+    if(enabledmechs & SASL_MECH_DIGEST_MD5) {
+      mech = SASL_MECH_STRING_DIGEST_MD5;
+      state1 = SASL_DIGESTMD5;
+      sasl->authused = SASL_MECH_DIGEST_MD5;
+    }
+    else if(enabledmechs & SASL_MECH_CRAM_MD5) {
+      mech = SASL_MECH_STRING_CRAM_MD5;
+      state1 = SASL_CRAMMD5;
+      sasl->authused = SASL_MECH_CRAM_MD5;
+    }
+    else
+#endif
+#ifdef USE_NTLM
+    if(enabledmechs & SASL_MECH_NTLM) {
+      mech = SASL_MECH_STRING_NTLM;
+      state1 = SASL_NTLM;
+      state2 = SASL_NTLM_TYPE2MSG;
+      sasl->authused = SASL_MECH_NTLM;
+
+      if(force_ir || data->set.sasl_ir)
+        result = Curl_sasl_create_ntlm_type1_message(conn->user, conn->passwd,
+                                                     &conn->ntlm, &resp, &len);
+      }
+    else
+#endif
+    if((enabledmechs & SASL_MECH_OAUTHBEARER) && conn->oauth_bearer) {
+      mech = SASL_MECH_STRING_OAUTHBEARER;
+      state1 = SASL_OAUTH2;
+      state2 = SASL_OAUTH2_RESP;
+      sasl->authused = SASL_MECH_OAUTHBEARER;
+
+      if(force_ir || data->set.sasl_ir)
+        result = sasl_create_oauth_bearer_message(data, conn->user,
+                                                  conn->host.name,
+                                                  conn->port,
+                                                  conn->oauth_bearer,
+                                                  &resp, &len);
+    }
+    else if((enabledmechs & SASL_MECH_XOAUTH2) && conn->oauth_bearer) {
+      mech = SASL_MECH_STRING_XOAUTH2;
+      state1 = SASL_OAUTH2;
+      sasl->authused = SASL_MECH_XOAUTH2;
+
+      if(force_ir || data->set.sasl_ir)
+        result = sasl_create_oauth_bearer_message(data, conn->user,
+                                                  NULL, 0,
+                                                  conn->oauth_bearer,
+                                                  &resp, &len);
+    }
+    else if(enabledmechs & SASL_MECH_LOGIN) {
+      mech = SASL_MECH_STRING_LOGIN;
+      state1 = SASL_LOGIN;
+      state2 = SASL_LOGIN_PASSWD;
+      sasl->authused = SASL_MECH_LOGIN;
+
+      if(force_ir || data->set.sasl_ir)
+        result = sasl_create_login_message(data, conn->user, &resp, &len);
+    }
+    else if(enabledmechs & SASL_MECH_PLAIN) {
+      mech = SASL_MECH_STRING_PLAIN;
+      state1 = SASL_PLAIN;
+      sasl->authused = SASL_MECH_PLAIN;
+
+      if(force_ir || data->set.sasl_ir)
+        result = sasl_create_plain_message(data, conn->user, conn->passwd,
+                                           &resp, &len);
+    }
+  }
+
+  if(!result) {
+    if(resp && sasl->params->maxirlen &&
+       strlen(mech) + len > sasl->params->maxirlen) {
+      free(resp);
+      resp = NULL;
+    }
+
+    if(mech) {
+      result = sasl->params->sendauth(conn, mech, resp);
+      if(!result) {
+        *progress = SASL_INPROGRESS;
+        state(sasl, conn, resp? state2: state1);
+      }
+    }
+  }
+
+  free(resp);
+
+  return result;
+}
+
+/*
+ * Curl_sasl_continue()
+ *
+ * Continue the authentication.
+ */
+CURLcode Curl_sasl_continue(struct SASL *sasl, struct connectdata *conn,
+                            int code, saslprogress *progress)
+{
+  CURLcode result = CURLE_OK;
+  struct SessionHandle *data = conn->data;
+  saslstate newstate = SASL_FINAL;
+  char *resp = NULL;
+#if !defined(CURL_DISABLE_CRYPTO_AUTH)
+  char *serverdata;
+  char *chlg = NULL;
+  size_t chlglen = 0;
+#endif
+  size_t len = 0;
+
+  *progress = SASL_INPROGRESS;
+
+  if(sasl->state == SASL_FINAL) {
+    if(code != sasl->params->finalcode)
+      result = CURLE_LOGIN_DENIED;
+    *progress = SASL_DONE;
+    state(sasl, conn, SASL_STOP);
+    return result;
+  }
+
+  if(sasl->state != SASL_CANCEL && sasl->state != SASL_OAUTH2_RESP &&
+     code != sasl->params->contcode) {
+    *progress = SASL_DONE;
+    state(sasl, conn, SASL_STOP);
+    return CURLE_LOGIN_DENIED;
+  }
+
+  switch(sasl->state) {
+  case SASL_STOP:
+    *progress = SASL_DONE;
+    return result;
+  case SASL_PLAIN:
+    result = sasl_create_plain_message(data, conn->user, conn->passwd, &resp,
+                                       &len);
+    break;
+  case SASL_LOGIN:
+    result = sasl_create_login_message(data, conn->user, &resp, &len);
+    newstate = SASL_LOGIN_PASSWD;
+    break;
+  case SASL_LOGIN_PASSWD:
+    result = sasl_create_login_message(data, conn->passwd, &resp, &len);
+    break;
+  case SASL_EXTERNAL:
+    result = sasl_create_external_message(data, conn->user, &resp, &len);
+    break;
+
+#ifndef CURL_DISABLE_CRYPTO_AUTH
+  case SASL_CRAMMD5:
+    sasl->params->getmessage(data->state.buffer, &serverdata);
+    result = sasl_decode_cram_md5_message(serverdata, &chlg, &chlglen);
+    if(!result)
+      result = sasl_create_cram_md5_message(data, chlg, conn->user,
+                                            conn->passwd, &resp, &len);
+    free(chlg);
+    break;
+  case SASL_DIGESTMD5:
+    sasl->params->getmessage(data->state.buffer, &serverdata);
+    result = Curl_sasl_create_digest_md5_message(data, serverdata,
+                                                 conn->user, conn->passwd,
+                                                 sasl->params->service,
+                                                 &resp, &len);
+    newstate = SASL_DIGESTMD5_RESP;
+    break;
+  case SASL_DIGESTMD5_RESP:
+    resp = strdup("");
+    if(!resp)
+      result = CURLE_OUT_OF_MEMORY;
+    break;
+#endif
+
+#ifdef USE_NTLM
+  case SASL_NTLM:
+    /* Create the type-1 message */
+    result = Curl_sasl_create_ntlm_type1_message(conn->user, conn->passwd,
+                                                 &conn->ntlm, &resp, &len);
+    newstate = SASL_NTLM_TYPE2MSG;
+    break;
+  case SASL_NTLM_TYPE2MSG:
+    /* Decode the type-2 message */
+    sasl->params->getmessage(data->state.buffer, &serverdata);
+    result = Curl_sasl_decode_ntlm_type2_message(data, serverdata,
+                                                 &conn->ntlm);
+    if(!result)
+      result = Curl_sasl_create_ntlm_type3_message(data, conn->user,
+                                                   conn->passwd, &conn->ntlm,
+                                                   &resp, &len);
+    break;
+#endif
+
+#if defined(USE_KERBEROS5)
+  case SASL_GSSAPI:
+    result = Curl_sasl_create_gssapi_user_message(data, conn->user,
+                                                  conn->passwd,
+                                                  sasl->params->service,
+                                                  sasl->mutual_auth, NULL,
+                                                  &conn->krb5,
+                                                  &resp, &len);
+    newstate = SASL_GSSAPI_TOKEN;
+    break;
+  case SASL_GSSAPI_TOKEN:
+    sasl->params->getmessage(data->state.buffer, &serverdata);
+    if(sasl->mutual_auth) {
+      /* Decode the user token challenge and create the optional response
+         message */
+      result = Curl_sasl_create_gssapi_user_message(data, NULL, NULL, NULL,
+                                                    sasl->mutual_auth,
+                                                    serverdata, &conn->krb5,
+                                                    &resp, &len);
+      newstate = SASL_GSSAPI_NO_DATA;
+    }
+    else
+      /* Decode the security challenge and create the response message */
+      result = Curl_sasl_create_gssapi_security_message(data, serverdata,
+                                                        &conn->krb5,
+                                                        &resp, &len);
+    break;
+  case SASL_GSSAPI_NO_DATA:
+    sasl->params->getmessage(data->state.buffer, &serverdata);
+    /* Decode the security challenge and create the response message */
+    result = Curl_sasl_create_gssapi_security_message(data, serverdata,
+                                                      &conn->krb5,
+                                                      &resp, &len);
+    break;
+#endif
+
+  case SASL_OAUTH2:
+    /* Create the authorisation message */
+    if(sasl->authused == SASL_MECH_OAUTHBEARER) {
+      result = sasl_create_oauth_bearer_message(data, conn->user,
+                                                conn->host.name,
+                                                conn->port,
+                                                conn->oauth_bearer,
+                                                &resp, &len);
+
+      /* Failures maybe sent by the server as continuations for OAUTHBEARER */
+      newstate = SASL_OAUTH2_RESP;
+    }
+    else
+      result = sasl_create_oauth_bearer_message(data, conn->user,
+                                                NULL, 0,
+                                                conn->oauth_bearer,
+                                                &resp, &len);
+    break;
+
+  case SASL_OAUTH2_RESP:
+    /* The continuation is optional so check the response code */
+    if(code == sasl->params->finalcode) {
+      /* Final response was received so we are done */
+      *progress = SASL_DONE;
+      state(sasl, conn, SASL_STOP);
+      return result;
+    }
+    else if(code == sasl->params->contcode) {
+      /* Acknowledge the continuation by sending a 0x01 response base64
+         encoded */
+      resp = strdup("AQ==");
+      if(!resp)
+        result = CURLE_OUT_OF_MEMORY;
+      break;
+    }
+    else {
+      *progress = SASL_DONE;
+      state(sasl, conn, SASL_STOP);
+      return CURLE_LOGIN_DENIED;
+    }
+
+  case SASL_CANCEL:
+    /* Remove the offending mechanism from the supported list */
+    sasl->authmechs ^= sasl->authused;
+
+    /* Start an alternative SASL authentication */
+    result = Curl_sasl_start(sasl, conn, sasl->force_ir, progress);
+    newstate = sasl->state;   /* Use state from Curl_sasl_start() */
+    break;
+  default:
+    failf(data, "Unsupported SASL authentication mechanism");
+    result = CURLE_UNSUPPORTED_PROTOCOL;  /* Should not happen */
+    break;
+  }
+
+  switch(result) {
+  case CURLE_BAD_CONTENT_ENCODING:
+    /* Cancel dialog */
+    result = sasl->params->sendcont(conn, "*");
+    newstate = SASL_CANCEL;
+    break;
+  case CURLE_OK:
+    if(resp)
+      result = sasl->params->sendcont(conn, resp);
+    break;
+  default:
+    newstate = SASL_STOP;    /* Stop on error */
+    *progress = SASL_DONE;
+    break;
+  }
+
+  free(resp);
+
+  state(sasl, conn, newstate);
+
+  return result;
 }

@@ -1,4 +1,4 @@
-set(LIB_NAME libcurl)
+# Modified by Mikhail Gusev (gusevmihs@gmail.com) for NextGIS Build System.
 
 configure_file(${CURL_SOURCE_DIR}/include/curl/curlbuild.h.cmake
   ${CURL_BINARY_DIR}/include/curl/curlbuild.h)
@@ -61,12 +61,13 @@ if(USE_ARES)
   include_directories(${CARES_INCLUDE_DIR})
 endif()
 
-if(BUILD_SHARED_LIBS)
-  # DLL / so dynamic lib
-  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC SHARED)
-else()
+#if(CURL_STATICLIB)
+if(NOT BUILD_SHARED_LIBS)
   # Static lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
+else()
+  # DLL / so dynamic lib
+  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC SHARED)
 endif()
 
 add_library(
@@ -75,14 +76,16 @@ add_library(
   ${HHEADERS} ${CSOURCES}
   )
 
-if(MSVC AND NOT BUILD_SHARED_LIBS)
+if(MSVC AND NOT BUILD_SHARED_LIBS) # CURL_STATICLIB)
   set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
 endif()
 
-target_link_libraries(${LIB_NAME} ${CURL_LIBS})
+set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${CURL_LIBS})
+target_link_extlibraries(${LIB_NAME}) # only supported external libraries
+#target_link_libraries(${LIB_NAME} ${CURL_LIBS} ${TARGET_LINK_LIB})
 
 if(WIN32)
-  add_definitions( -D_USRDLL )
+  add_definitions(-D_USRDLL)
 endif()
 
 set_target_properties(${LIB_NAME} PROPERTIES COMPILE_DEFINITIONS BUILDING_LIBCURL)
@@ -92,20 +95,18 @@ set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
 set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
 if(WIN32)
-  if(BUILD_SHARED_LIBS)
+  if(BUILD_SHARED_LIBS)#NOT CURL_STATICLIB)
     # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
     set_target_properties(${LIB_NAME} PROPERTIES IMPORT_SUFFIX "_imp.lib")
   endif()
 endif()
 
-install(TARGETS ${LIB_NAME} 
-        RUNTIME DESTINATION bin
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib )
+install(TARGETS ${LIB_NAME}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  
+#export(TARGETS ${LIB_NAME} FILE ${LIB_NAME}-exports.cmake EXPORT_LINK_INTERFACE_LIBRARIES)
+set(EXPORT_TARGETS ${EXPORT_TARGETS} ${LIB_NAME} PARENT_SCOPE)
 
-# todo: do we need some univesal cmake file for this?
-if(BUILD_SHARED_LIBS)
-    export(TARGETS ${LIB_NAME} FILE ${CURL_BINARY_DIR}/${LIB_NAME}-exports.cmake)
-else()
-    export(TARGETS ${LIB_NAME} FILE ${CURL_BINARY_DIR}/${LIB_NAME}static-exports.cmake)
-endif()
+

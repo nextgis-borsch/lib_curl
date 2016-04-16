@@ -9,7 +9,7 @@
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -282,9 +282,7 @@ int DisposeLibraryData( void *data )
   if(data) {
     void *tenbytes = ((libdata_t *) data)->tenbytes;
 
-    if(tenbytes)
-      free(tenbytes);
-
+    free(tenbytes);
     free(data);
   }
 
@@ -296,9 +294,7 @@ void DisposeThreadData( void *data )
   if(data) {
     void *twentybytes = ((libthreaddata_t *) data)->twentybytes;
 
-    if(twentybytes)
-      free(twentybytes);
-
+    free(twentybytes);
     free(data);
   }
 }

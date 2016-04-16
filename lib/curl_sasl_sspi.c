@@ -5,12 +5,12 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 2014, Steve Holme, <steve_holme@hotmail.com>.
- * Copyright (C) 2014, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 2014 - 2016 Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 2014 - 2016, Steve Holme, <steve_holme@hotmail.com>.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -36,30 +36,29 @@
 #include "urldata.h"
 #include "curl_base64.h"
 #include "warnless.h"
-#include "curl_memory.h"
 #include "curl_multibyte.h"
 #include "sendf.h"
 #include "strdup.h"
+#include "curl_printf.h"
+#include "rawstr.h"
 
-#define _MPRINTF_REPLACE /* use our functions only */
-#include <curl/mprintf.h>
-
-/* The last #include file should be: */
+/* The last #include files should be: */
+#include "curl_memory.h"
 #include "memdebug.h"
 
 /*
  * Curl_sasl_build_spn()
  *
- * This is used to build a SPN string in the format service/host.
+ * This is used to build a SPN string in the format service/instance.
  *
  * Parameters:
  *
  * serivce  [in] - The service type such as www, smtp, pop or imap.
- * host     [in] - The host name or realm.
+ * instance [in] - The host name or realm.
  *
  * Returns a pointer to the newly allocated SPN.
  */
-TCHAR *Curl_sasl_build_spn(const char *service, const char *host)
+TCHAR *Curl_sasl_build_spn(const char *service, const char *instance)
 {
   char *utf8_spn = NULL;
   TCHAR *tchar_spn = NULL;
@@ -72,7 +71,7 @@ TCHAR *Curl_sasl_build_spn(const char *service, const char *host)
      formulate the SPN instead. */
 
   /* Allocate our UTF8 based SPN */
-  utf8_spn = aprintf("%s/%s", service, host);
+  utf8_spn = aprintf("%s/%s", service, instance);
   if(!utf8_spn) {
     return NULL;
   }
@@ -80,7 +79,7 @@ TCHAR *Curl_sasl_build_spn(const char *service, const char *host)
   /* Allocate our TCHAR based SPN */
   tchar_spn = Curl_convert_UTF8_to_tchar(utf8_spn);
   if(!tchar_spn) {
-    Curl_safefree(utf8_spn);
+    free(utf8_spn);
 
     return NULL;
   }
@@ -156,7 +155,7 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   status = s_pSecFn->QuerySecurityPackageInfo((TCHAR *) TEXT(SP_NAME_DIGEST),
                                               &SecurityPackage);
   if(status != SEC_E_OK) {
-    Curl_safefree(input_token);
+    free(input_token);
 
     return CURLE_NOT_BUILT_IN;
   }
@@ -169,7 +168,7 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   /* Allocate our response buffer */
   output_token = malloc(token_max);
   if(!output_token) {
-    Curl_safefree(input_token);
+    free(input_token);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -177,8 +176,8 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   /* Generate our SPN */
   spn = Curl_sasl_build_spn(service, data->easy_conn->host.name);
   if(!spn) {
-    Curl_safefree(output_token);
-    Curl_safefree(input_token);
+    free(output_token);
+    free(input_token);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -187,9 +186,9 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
     /* Populate our identity structure */
     result = Curl_create_sspi_identity(userp, passwdp, &identity);
     if(result) {
-      Curl_safefree(spn);
-      Curl_safefree(output_token);
-      Curl_safefree(input_token);
+      free(spn);
+      free(output_token);
+      free(input_token);
 
       return result;
     }
@@ -210,9 +209,9 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
 
   if(status != SEC_E_OK) {
     Curl_sspi_free_identity(p_identity);
-    Curl_safefree(spn);
-    Curl_safefree(output_token);
-    Curl_safefree(input_token);
+    free(spn);
+    free(output_token);
+    free(input_token);
 
     return CURLE_LOGIN_DENIED;
   }
@@ -245,9 +244,9 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   else if(status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) {
     s_pSecFn->FreeCredentialsHandle(&credentials);
     Curl_sspi_free_identity(p_identity);
-    Curl_safefree(spn);
-    Curl_safefree(output_token);
-    Curl_safefree(input_token);
+    free(spn);
+    free(output_token);
+    free(input_token);
 
     return CURLE_RECV_ERROR;
   }
@@ -264,15 +263,84 @@ CURLcode Curl_sasl_create_digest_md5_message(struct SessionHandle *data,
   Curl_sspi_free_identity(p_identity);
 
   /* Free the SPN */
-  Curl_safefree(spn);
+  free(spn);
 
   /* Free the response buffer */
-  Curl_safefree(output_token);
+  free(output_token);
 
   /* Free the decoded challenge message */
-  Curl_safefree(input_token);
+  free(input_token);
 
   return result;
+}
+
+/*
+ * Curl_override_sspi_http_realm()
+ *
+ * This is used to populate the domain in a SSPI identity structure
+ * The realm is extracted from the challenge message and used as the
+ * domain if it is not already explicitly set.
+ *
+ * Parameters:
+ *
+ * chlg     [in]     - The challenge message.
+ * identity [in/out] - The identity structure.
+ *
+ * Returns CURLE_OK on success.
+ */
+CURLcode Curl_override_sspi_http_realm(const char *chlg,
+                                       SEC_WINNT_AUTH_IDENTITY *identity)
+{
+  xcharp_u domain, dup_domain;
+
+  /* If domain is blank or unset, check challenge message for realm */
+  if(!identity->Domain || !identity->DomainLength) {
+    for(;;) {
+      char value[DIGEST_MAX_VALUE_LENGTH];
+      char content[DIGEST_MAX_CONTENT_LENGTH];
+
+      /* Pass all additional spaces here */
+      while(*chlg && ISSPACE(*chlg))
+        chlg++;
+
+      /* Extract a value=content pair */
+      if(Curl_sasl_digest_get_pair(chlg, value, content, &chlg)) {
+        if(Curl_raw_equal(value, "realm")) {
+
+          /* Setup identity's domain and length */
+          domain.tchar_ptr = Curl_convert_UTF8_to_tchar((char *)content);
+          if(!domain.tchar_ptr)
+            return CURLE_OUT_OF_MEMORY;
+          dup_domain.tchar_ptr = _tcsdup(domain.tchar_ptr);
+          if(!dup_domain.tchar_ptr) {
+            Curl_unicodefree(domain.tchar_ptr);
+            return CURLE_OUT_OF_MEMORY;
+          }
+          free(identity->Domain);
+          identity->Domain = dup_domain.tbyte_ptr;
+          identity->DomainLength = curlx_uztoul(_tcslen(dup_domain.tchar_ptr));
+          dup_domain.tchar_ptr = NULL;
+
+          Curl_unicodefree(domain.tchar_ptr);
+        }
+        else {
+          /* unknown specifier, ignore it! */
+        }
+      }
+      else
+        break; /* we're done here */
+
+      /* Pass all additional spaces here */
+      while(*chlg && ISSPACE(*chlg))
+        chlg++;
+
+      /* Allow the list to be comma-separated */
+      if(',' == *chlg)
+        chlg++;
+    }
+  }
+
+  return CURLE_OK;
 }
 
 /*
@@ -351,6 +419,7 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
   SECURITY_STATUS status;
   unsigned long attrs;
   TimeStamp expiry; /* For Windows 9x compatibility of SSPI calls */
+  TCHAR *spn;
 
   (void) data;
 
@@ -376,6 +445,11 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
     if(Curl_create_sspi_identity(userp, passwdp, &identity))
       return CURLE_OUT_OF_MEMORY;
 
+    /* Populate our identity domain */
+    if(Curl_override_sspi_http_realm((const char*)digest->input_token,
+                                     &identity))
+      return CURLE_OUT_OF_MEMORY;
+
     /* Allow proper cleanup of the identity structure */
     p_identity = &identity;
   }
@@ -390,7 +464,8 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
                                               p_identity, NULL, NULL,
                                               &credentials, &expiry);
   if(status != SEC_E_OK) {
-    Curl_safefree(output_token);
+    Curl_sspi_free_identity(p_identity);
+    free(output_token);
 
     return CURLE_LOGIN_DENIED;
   }
@@ -417,12 +492,21 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
   resp_buf.pvBuffer   = output_token;
   resp_buf.cbBuffer   = curlx_uztoul(token_max);
 
+  spn = Curl_convert_UTF8_to_tchar((char *) uripath);
+  if(!spn) {
+    Curl_sspi_free_identity(p_identity);
+    free(output_token);
+
+    return CURLE_OUT_OF_MEMORY;
+  }
+
   /* Generate our reponse message */
   status = s_pSecFn->InitializeSecurityContext(&credentials, NULL,
-                                               (TCHAR *) uripath,
+                                               spn,
                                                ISC_REQ_USE_HTTP_STYLE, 0, 0,
                                                &chlg_desc, 0, &context,
                                                &resp_desc, &attrs, &expiry);
+  Curl_unicodefree(spn);
 
   if(status == SEC_I_COMPLETE_NEEDED ||
      status == SEC_I_COMPLETE_AND_CONTINUE)
@@ -430,7 +514,8 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
   else if(status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) {
     s_pSecFn->FreeCredentialsHandle(&credentials);
 
-    Curl_safefree(output_token);
+    Curl_sspi_free_identity(p_identity);
+    free(output_token);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -440,7 +525,8 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
     s_pSecFn->DeleteSecurityContext(&context);
     s_pSecFn->FreeCredentialsHandle(&credentials);
 
-    Curl_safefree(output_token);
+    Curl_sspi_free_identity(p_identity);
+    free(output_token);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -461,7 +547,7 @@ CURLcode Curl_sasl_create_digest_http_message(struct SessionHandle *data,
   Curl_sspi_free_identity(p_identity);
 
   /* Free the response buffer */
-  Curl_safefree(output_token);
+  free(output_token);
 
   return CURLE_OK;
 }
@@ -488,22 +574,22 @@ void Curl_sasl_digest_cleanup(struct digestdata *digest)
 
 #if defined USE_NTLM
 /*
-* Curl_sasl_create_ntlm_type1_message()
-*
-* This is used to generate an already encoded NTLM type-1 message ready for
-* sending to the recipient.
-*
-* Parameters:
-*
-* userp   [in]     - The user name in the format User or Domain\User.
-* passdwp [in]     - The user's password.
-* ntlm    [in/out] - The ntlm data struct being used and modified.
-* outptr  [in/out] - The address where a pointer to newly allocated memory
-*                    holding the result will be stored upon completion.
-* outlen  [out]    - The length of the output message.
-*
-* Returns CURLE_OK on success.
-*/
+ * Curl_sasl_create_ntlm_type1_message()
+ *
+ * This is used to generate an already encoded NTLM type-1 message ready for
+ * sending to the recipient.
+ *
+ * Parameters:
+ *
+ * userp   [in]     - The user name in the format User or Domain\User.
+ * passdwp [in]     - The user's password.
+ * ntlm    [in/out] - The NTLM data struct being used and modified.
+ * outptr  [in/out] - The address where a pointer to newly allocated memory
+ *                    holding the result will be stored upon completion.
+ * outlen  [out]    - The length of the output message.
+ *
+ * Returns CURLE_OK on success.
+ */
 CURLcode Curl_sasl_create_ntlm_type1_message(const char *userp,
                                              const char *passwdp,
                                              struct ntlmdata *ntlm,
@@ -600,18 +686,18 @@ CURLcode Curl_sasl_create_ntlm_type1_message(const char *userp,
 }
 
 /*
-* Curl_sasl_decode_ntlm_type2_message()
-*
-* This is used to decode an already encoded NTLM type-2 message.
-*
-* Parameters:
-*
-* data     [in]     - The session handle.
-* type2msg [in]     - The base64 encoded type-2 message.
-* ntlm     [in/out] - The ntlm data struct being used and modified.
-*
-* Returns CURLE_OK on success.
-*/
+ * Curl_sasl_decode_ntlm_type2_message()
+ *
+ * This is used to decode an already encoded NTLM type-2 message.
+ *
+ * Parameters:
+ *
+ * data     [in]     - The session handle.
+ * type2msg [in]     - The base64 encoded type-2 message.
+ * ntlm     [in/out] - The NTLM data struct being used and modified.
+ *
+ * Returns CURLE_OK on success.
+ */
 CURLcode Curl_sasl_decode_ntlm_type2_message(struct SessionHandle *data,
                                              const char *type2msg,
                                              struct ntlmdata *ntlm)
@@ -646,23 +732,23 @@ CURLcode Curl_sasl_decode_ntlm_type2_message(struct SessionHandle *data,
 }
 
 /*
-* Curl_sasl_create_ntlm_type3_message()
-*
-* This is used to generate an already encoded NTLM type-3 message ready for
-* sending to the recipient.
-*
-* Parameters:
-*
-* data    [in]     - The session handle.
-* userp   [in]     - The user name in the format User or Domain\User.
-* passdwp [in]     - The user's password.
-* ntlm    [in/out] - The ntlm data struct being used and modified.
-* outptr  [in/out] - The address where a pointer to newly allocated memory
-*                    holding the result will be stored upon completion.
-* outlen  [out]    - The length of the output message.
-*
-* Returns CURLE_OK on success.
-*/
+ * Curl_sasl_create_ntlm_type3_message()
+ *
+ * This is used to generate an already encoded NTLM type-3 message ready for
+ * sending to the recipient.
+ *
+ * Parameters:
+ *
+ * data    [in]     - The session handle.
+ * userp   [in]     - The user name in the format User or Domain\User.
+ * passdwp [in]     - The user's password.
+ * ntlm    [in/out] - The NTLM data struct being used and modified.
+ * outptr  [in/out] - The address where a pointer to newly allocated memory
+ *                    holding the result will be stored upon completion.
+ * outlen  [out]    - The length of the output message.
+ *
+ * Returns CURLE_OK on success.
+ */
 CURLcode Curl_sasl_create_ntlm_type3_message(struct SessionHandle *data,
                                              const char *userp,
                                              const char *passwdp,
@@ -725,11 +811,11 @@ CURLcode Curl_sasl_create_ntlm_type3_message(struct SessionHandle *data,
 /*
  * Curl_sasl_ntlm_cleanup()
  *
- * This is used to clean up the ntlm specific data.
+ * This is used to clean up the NTLM specific data.
  *
  * Parameters:
  *
- * ntlm    [in/out] - The ntlm data struct being cleaned up.
+ * ntlm    [in/out] - The NTLM data struct being cleaned up.
  *
  */
 void Curl_sasl_ntlm_cleanup(struct ntlmdata *ntlm)
@@ -777,7 +863,7 @@ void Curl_sasl_ntlm_cleanup(struct ntlmdata *ntlm)
  * mutual_auth [in]     - Flag specifing whether or not mutual authentication
  *                        is enabled.
  * chlg64      [in]     - The optional base64 encoded challenge message.
- * krb5        [in/out] - The gssapi data struct being used and modified.
+ * krb5        [in/out] - The Kerberos 5 data struct being used and modified.
  * outptr      [in/out] - The address where a pointer to newly allocated memory
  *                        holding the result will be stored upon completion.
  * outlen      [out]    - The length of the output message.
@@ -912,7 +998,7 @@ CURLcode Curl_sasl_create_gssapi_user_message(struct SessionHandle *data,
                                                &expiry);
 
   if(status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) {
-    Curl_safefree(chlg);
+    free(chlg);
 
     return CURLE_RECV_ERROR;
   }
@@ -930,7 +1016,7 @@ CURLcode Curl_sasl_create_gssapi_user_message(struct SessionHandle *data,
   }
 
   /* Free the decoded challenge */
-  Curl_safefree(chlg);
+  free(chlg);
 
   return result;
 }
@@ -945,7 +1031,7 @@ CURLcode Curl_sasl_create_gssapi_user_message(struct SessionHandle *data,
  *
  * data    [in]     - The session handle.
  * chlg64  [in]     - The optional base64 encoded challenge message.
- * krb5    [in/out] - The gssapi data struct being used and modified.
+ * krb5    [in/out] - The Kerberos 5 data struct being used and modified.
  * outptr  [in/out] - The address where a pointer to newly allocated memory
  *                    holding the result will be stored upon completion.
  * outlen  [out]    - The length of the output message.
@@ -1001,7 +1087,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
                                             SECPKG_ATTR_SIZES,
                                             &sizes);
   if(status != SEC_E_OK) {
-    Curl_safefree(chlg);
+    free(chlg);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -1011,7 +1097,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
                                                 SECPKG_CRED_ATTR_NAMES,
                                                 &names);
   if(status != SEC_E_OK) {
-    Curl_safefree(chlg);
+    free(chlg);
 
     return CURLE_RECV_ERROR;
   }
@@ -1032,7 +1118,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   if(status != SEC_E_OK) {
     infof(data, "GSSAPI handshake failure (empty security message)\n");
 
-    Curl_safefree(chlg);
+    free(chlg);
 
     return CURLE_BAD_CONTENT_ENCODING;
   }
@@ -1041,7 +1127,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   if(input_buf[1].cbBuffer != 4) {
     infof(data, "GSSAPI handshake failure (invalid security data)\n");
 
-    Curl_safefree(chlg);
+    free(chlg);
 
     return CURLE_BAD_CONTENT_ENCODING;
   }
@@ -1049,7 +1135,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   /* Copy the data out and free the challenge as it is not required anymore */
   memcpy(&indata, input_buf[1].pvBuffer, 4);
   s_pSecFn->FreeContextBuffer(input_buf[1].pvBuffer);
-  Curl_safefree(chlg);
+  free(chlg);
 
   /* Extract the security layer */
   sec_layer = indata & 0x000000FF;
@@ -1076,7 +1162,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   /* Convert the user name to UTF8 when operating with Unicode */
   user_name = Curl_convert_tchar_to_UTF8(names.sUserName);
   if(!user_name) {
-    Curl_safefree(trailer);
+    free(trailer);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -1085,7 +1171,7 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   messagelen = sizeof(outdata) + strlen(user_name) + 1;
   message = malloc(messagelen);
   if(!message) {
-    Curl_safefree(trailer);
+    free(trailer);
     Curl_unicodefree(user_name);
 
     return CURLE_OUT_OF_MEMORY;
@@ -1104,8 +1190,8 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   /* Allocate the padding */
   padding = malloc(sizes.cbBlockSize);
   if(!padding) {
-    Curl_safefree(message);
-    Curl_safefree(trailer);
+    free(message);
+    free(trailer);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -1128,9 +1214,9 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
   status = s_pSecFn->EncryptMessage(krb5->context, KERB_WRAP_NO_ENCRYPT,
                                     &wrap_desc, 0);
   if(status != SEC_E_OK) {
-    Curl_safefree(padding);
-    Curl_safefree(message);
-    Curl_safefree(trailer);
+    free(padding);
+    free(message);
+    free(trailer);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -1140,9 +1226,9 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
                wrap_buf[2].cbBuffer;
   appdata = malloc(appdatalen);
   if(!appdata) {
-    Curl_safefree(padding);
-    Curl_safefree(message);
-    Curl_safefree(trailer);
+    free(padding);
+    free(message);
+    free(trailer);
 
     return CURLE_OUT_OF_MEMORY;
   }
@@ -1159,10 +1245,10 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
                               outlen);
 
   /* Free all of our local buffers */
-  Curl_safefree(appdata);
-  Curl_safefree(padding);
-  Curl_safefree(message);
-  Curl_safefree(trailer);
+  free(appdata);
+  free(padding);
+  free(message);
+  free(trailer);
 
   return result;
 }
@@ -1170,11 +1256,11 @@ CURLcode Curl_sasl_create_gssapi_security_message(struct SessionHandle *data,
 /*
  * Curl_sasl_gssapi_cleanup()
  *
- * This is used to clean up the gssapi specific data.
+ * This is used to clean up the GSSAPI (Kerberos V5) specific data.
  *
  * Parameters:
  *
- * krb5     [in/out] - The kerberos 5 data struct being cleaned up.
+ * krb5     [in/out] - The Kerberos 5 data struct being cleaned up.
  *
  */
 void Curl_sasl_gssapi_cleanup(struct kerberos5data *krb5)

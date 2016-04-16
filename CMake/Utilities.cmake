@@ -29,15 +29,3 @@ function(IN_STR_LIST LIST_NAME ITEM_SEARCHED RETVAL)
     set(${RETVAL} TRUE PARENT_SCOPE)
   endif()
 endfunction()
-
-
-function(report_version name ver)
-
-    string(ASCII 27 Esc)
-    set(BoldYellow  "${Esc}[1;33m")
-    set(ColourReset "${Esc}[m")
-        
-    message("- ${BoldYellow}${name} version ${ver}${ColourReset}")
-    
-endfunction()  
-
