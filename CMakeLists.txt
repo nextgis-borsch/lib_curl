@@ -49,33 +49,27 @@ include(Macros)
 
 project( CURL C ) # NOTE: this will add "CURL" prefix to variables like X_BINARY_DIR
 
-message(WARNING "the curl cmake build system is poorly maintained. Be aware")
+# message(WARNING "the curl cmake build system is poorly maintained. Be aware")
 
 include(GNUInstallDirs)
 set(INSTALL_BIN_DIR ${CMAKE_INSTALL_BINDIR} CACHE INTERNAL "Installation directory for executables" FORCE)
 set(INSTALL_LIB_DIR ${CMAKE_INSTALL_LIBDIR} CACHE INTERNAL "Installation directory for libraries" FORCE)
 set(INSTALL_INC_DIR ${CMAKE_INSTALL_INCLUDEDIR} CACHE INTERNAL "Installation directory for headers" FORCE)
 
-include(FindAnyProject)
+check_version(CURL_VERSION CURL_VERSION_NUM)
+report_version(${PROJECT_NAME} ${CURL_VERSION})
 
-file (READ ${CURL_SOURCE_DIR}/include/curl/curlver.h CURL_VERSION_H_CONTENTS)
-string (REGEX MATCH "#define LIBCURL_VERSION \"[^\"]*"
-  CURL_VERSION ${CURL_VERSION_H_CONTENTS})
-string (REGEX REPLACE "[^\"]+\"" "" CURL_VERSION ${CURL_VERSION})
-string (REGEX MATCH "#define LIBCURL_VERSION_NUM 0x[0-9a-fA-F]+"
-  CURL_VERSION_NUM ${CURL_VERSION_H_CONTENTS})
-string (REGEX REPLACE "[^0]+0x" "" CURL_VERSION_NUM ${CURL_VERSION_NUM})
+include(FindAnyProject)
 
 include_regular_expression("^.*$")    # Sukender: Is it necessary?
 
 # Setup package meta-data
-# SET(PACKAGE "curl")
-message(STATUS "curl version=[${CURL_VERSION}]")
-# SET(PACKAGE_TARNAME "curl")
-# SET(PACKAGE_NAME "curl")
+SET(PACKAGE "curl")
+SET(PACKAGE_TARNAME "curl")
+SET(PACKAGE_NAME "curl")
 # SET(PACKAGE_VERSION "-")
 # SET(PACKAGE_STRING "curl-")
-# SET(PACKAGE_BUGREPORT "a suitable curl mailing list => https://curl.haxx.se/mail/")
+#SET(PACKAGE_BUGREPORT "a suitable curl mailing list => https://curl.haxx.se/mail/")
 set(OPERATING_SYSTEM "${CMAKE_SYSTEM_NAME}")
 set(OS "\"${CMAKE_SYSTEM_NAME}\"")
 
@@ -1232,15 +1226,10 @@ if(MSVC_VERSION EQUAL 1600)
   endif()
 endif()
 
-
-#if(CURL_STATICLIB)
-if(NOT BUILD_SHARED_LIBS)
-    set(EXPORT_NAME ${PROJECT_NAME}static)
-else()
-    set(EXPORT_NAME ${PROJECT_NAME})
-endif()
 if(EXPORT_TARGETS)
-    export(TARGETS ${EXPORT_TARGETS} FILE ${EXPORT_NAME}-exports.cmake EXPORT_LINK_INTERFACE_LIBRARIES)
+    export(TARGETS ${EXPORT_TARGETS} FILE ${LIB_NAME}-exports.cmake 
+        EXPORT_LINK_INTERFACE_LIBRARIES
+    )
 endif()
 
 
