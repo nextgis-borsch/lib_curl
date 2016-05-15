@@ -91,8 +91,8 @@ endif()
 set_target_properties(${LIB_NAME} PROPERTIES COMPILE_DEFINITIONS BUILDING_LIBCURL)
 
 # Remove the "lib" prefix since the library is already named "libcurl".
-set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
-set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
+#set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
+#set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
 if(WIN32)
   if(BUILD_SHARED_LIBS)#NOT CURL_STATICLIB)
