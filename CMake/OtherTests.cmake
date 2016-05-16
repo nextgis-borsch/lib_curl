@@ -191,7 +191,7 @@ check_c_source_compiles("
   int main(void) {
     return poll((void *)0, 0, 10 /*ms*/);
   }" HAVE_POLL_FINE)
-endif()
+else()
 check_c_source_runs("
   #ifdef HAVE_SYS_POLL_H
   #  include <sys/poll.h>
