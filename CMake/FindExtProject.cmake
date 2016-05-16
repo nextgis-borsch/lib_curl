@@ -282,9 +282,9 @@ function(find_extproject name)
     endforeach()
     set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${IMPORTED_TARGET_PATH} PARENT_SCOPE)
     
-    include_directories(${EP_BASE}/Install/${name}_EP/include)
+    include_directories(SYSTEM ${EP_BASE}/Install/${name}_EP/include)
     foreach (inc ${repo_include})
-        include_directories(${EP_BASE}/Install/${name}_EP/include/${inc})
+        include_directories(SYSTEM ${EP_BASE}/Install/${name}_EP/include/${inc})
     endforeach ()  
         
     if(WIN32)
