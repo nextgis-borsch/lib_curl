@@ -902,7 +902,12 @@ foreach(CURL_TEST
     HAVE_GLIBC_STRERROR_R
     HAVE_POSIX_STRERROR_R
     )
-  curl_internal_test_run(${CURL_TEST})
+  if(ANDROID)
+    # cannot run on host
+    curl_internal_test(${CURL_TEST})
+  else()  
+    curl_internal_test_run(${CURL_TEST})
+  endif()  
 endforeach(CURL_TEST)
 
 # Check for reentrant
@@ -963,7 +968,7 @@ if(_FILE_OFFSET_BITS)
   set(_FILE_OFFSET_BITS 64)
 endif(_FILE_OFFSET_BITS)
 set(CMAKE_REQUIRED_FLAGS "-D_FILE_OFFSET_BITS=64")
-set(CMAKE_EXTRA_INCLUDE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/curl/curl.h")
+set(CMAKE_EXTRA_INCLUDE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/curl/curl.h")
 check_type_size("curl_off_t" SIZEOF_CURL_OFF_T)
 set(CMAKE_EXTRA_INCLUDE_FILES)
 set(CMAKE_REQUIRED_FLAGS)
