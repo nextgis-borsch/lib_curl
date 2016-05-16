@@ -210,7 +210,7 @@ endif()
 option(ENABLE_MANUAL "to provide the built-in manual" OFF)
 unset(USE_MANUAL CACHE) # TODO: cache NROFF/NROFF_MANOPT/USE_MANUAL vars?
 if(ENABLE_MANUAL)
-  find_program(NROFF NAMES gnroff nroff)
+  find_exthost_program(NROFF NAMES gnroff nroff)
   if(NROFF)
     # Need a way to write to stdin, this will do
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/nroff-input.txt" "test")
