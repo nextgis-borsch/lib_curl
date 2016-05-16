@@ -904,11 +904,15 @@ foreach(CURL_TEST
     )
   if(ANDROID)
     # cannot run on host
-    curl_internal_test(${CURL_TEST})
+    curl_internal_test(${CURL_TEST})    
   else()  
     curl_internal_test_run(${CURL_TEST})
   endif()  
 endforeach(CURL_TEST)
+
+if(ANDROID AND HAVE_GLIBC_STRERROR_R AND HAVE_POSIX_STRERROR_R)
+    unset(HAVE_POSIX_STRERROR_R)
+endif()
 
 # Check for reentrant
 foreach(CURL_TEST
