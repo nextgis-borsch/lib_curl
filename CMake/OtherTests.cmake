@@ -183,7 +183,7 @@ set(CMAKE_REQUIRED_FLAGS)
 if(HAVE_SYS_POLL_H)
   set(CMAKE_REQUIRED_FLAGS "-DHAVE_SYS_POLL_H")
 endif(HAVE_SYS_POLL_H)
-if(ANDROID)
+if(CMAKE_CROSSCOMPILING)
 check_c_source_compiles("
   #ifdef HAVE_SYS_POLL_H
   #  include <sys/poll.h>
