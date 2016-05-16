@@ -85,27 +85,6 @@ function(include_exports_path include_path)
     endif()
 endfunction() 
 
-# macro to find packages on the host OS
-macro( find_exthost_package )
- set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
- set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
- set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
- if( CMAKE_HOST_WIN32 )
-  SET( WIN32 1 )
-  SET( UNIX )
- elseif( CMAKE_HOST_APPLE )
-  SET( APPLE 1 )
-  SET( UNIX )
- endif()
- find_package( ${ARGN} )
- SET( WIN32 )
- SET( APPLE )
- SET( UNIX 1 )
- set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
- set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
- set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
-endmacro()
-
 function(find_extproject name)
   
     include (CMakeParseArguments)
@@ -146,6 +125,7 @@ function(find_extproject name)
         list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
     endif()
     if(ANDROID)
+        # TODO: do we need more keys?
         list(APPEND find_extproject_CMAKE_ARGS -DANDROID_NDK=${ANDROID_NDK})
         list(APPEND find_extproject_CMAKE_ARGS -DANDROID_NATIVE_API_LEVEL=${ANDROID_NATIVE_API_LEVEL})
         list(APPEND find_extproject_CMAKE_ARGS -DANDROID_ABI=${ANDROID_ABI})
@@ -215,15 +195,11 @@ function(find_extproject name)
       return()
     endif()
       
-    if(NOT TARGET ${name}_EP)
-        ExternalProject_Add(${name}_EP
-            #GIT_REPOSITORY ${EP_URL}/${repo_name}
-            DOWNLOAD_COMMAND "${GIT_EXECUTABLE} clone ${EP_URL}/${repo_name} ${EP_BASE}/Source/${name}_EP"
-            CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
-            UPDATE_DISCONNECTED 1
-        )
-    endif()    
-
+    ExternalProject_Add(${name}_EP
+        GIT_REPOSITORY ${EP_URL}/${repo_name}
+        CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
+        UPDATE_DISCONNECTED 1
+    )
    
     set(RECONFIGURE OFF)
     set(INCLUDE_EXPORT_PATH "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
