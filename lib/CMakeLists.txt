@@ -65,7 +65,7 @@ endif()
 if(NOT BUILD_SHARED_LIBS)
   # Static lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
-    if(UNIX)
+    if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
         set( CMAKE_CXX_FLAGS "-fpic ${CMAKE_CXX_FLAGS}" )
         set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )  
     endif()
