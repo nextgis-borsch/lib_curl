@@ -58,7 +58,7 @@ function(check_updates file_path update_period check)
     endif()
 endfunction()
 
-macro(color_message text)
+function(color_message text)
 
     string(ASCII 27 Esc)
     set(BoldGreen   "${Esc}[1;32m")
@@ -66,14 +66,15 @@ macro(color_message text)
         
     message(STATUS "${BoldGreen}${text}${ColourReset}")
     
-endmacro()
+endfunction()
 
-macro(include_exports_path include_path)
+function(include_exports_path include_path)
+    message(STATUS "include_exports_path ${include_path}")
     #add to list imported 
     list(FIND EXPORTS_PATHS ${include_path} PATH_INDEX)
     if(PATH_INDEX EQUAL -1)
         list(APPEND EXPORTS_PATHS "${include_path}")
-        ##set(EXPORTS_PATHS "${EXPORTS_PATHS}" PARENT_SCOPE)
+        set(EXPORTS_PATHS "${EXPORTS_PATHS}" PARENT_SCOPE)
         # Add imported library have limit scope
         # During the export cmake add library without GLOBAL parameter and no
         # way to change this bihaviour. Let's fix it.
@@ -81,9 +82,10 @@ macro(include_exports_path include_path)
         string (REPLACE "IMPORTED)" "IMPORTED GLOBAL)" _file_content "${_file_content}")
         file(WRITE ${include_path} "${_file_content}") 
         
+        message(STATUS "include(${include_path})")
         include(${include_path})
     endif()
-endmacro()
+endfunction()
 
 function(find_extproject name)
   
