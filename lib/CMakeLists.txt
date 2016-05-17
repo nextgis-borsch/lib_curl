@@ -65,8 +65,10 @@ endif()
 if(NOT BUILD_SHARED_LIBS)
   # Static lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
-  set( CMAKE_CXX_FLAGS "-fpic ${CMAKE_CXX_FLAGS}" )
-  set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )
+    if(UNIX)
+        set( CMAKE_CXX_FLAGS "-fpic ${CMAKE_CXX_FLAGS}" )
+        set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )  
+    endif()
 else()
   # DLL / so dynamic lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC SHARED)
