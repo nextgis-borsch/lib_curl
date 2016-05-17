@@ -69,7 +69,6 @@ function(color_message text)
 endfunction()
 
 function(include_exports_path include_path)
-    message(STATUS "include_exports_path ${include_path}")
     #add to list imported 
     list(FIND EXPORTS_PATHS ${include_path} PATH_INDEX)
     if(PATH_INDEX EQUAL -1)
@@ -81,8 +80,7 @@ function(include_exports_path include_path)
         file (READ ${include_path} _file_content)
         string (REPLACE "IMPORTED)" "IMPORTED GLOBAL)" _file_content "${_file_content}")
         file(WRITE ${include_path} "${_file_content}") 
-        
-        message(STATUS "include(${include_path})")
+
         include(${include_path})
     endif()
 endfunction()
@@ -170,6 +168,7 @@ function(find_extproject name)
     
     if(EXISTS ${EP_BASE}/Build/${name}_EP/ext_options.cmake)         
         include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)
+
         # add include into  ext_options.cmake
         set(WITHOPT "${WITHOPT}include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)\n" PARENT_SCOPE)   
        
@@ -215,9 +214,9 @@ function(find_extproject name)
         #execute_process(COMMAND ${GIT_EXECUTABLE} checkout master
         #    WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)
         file(WRITE ${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitclone-lastrun.txt "")
-        #execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
-        #    ${find_extproject_CMAKE_ARGS}
-        #    WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)
+        execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
+            ${find_extproject_CMAKE_ARGS}
+            WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)
         set(RECONFIGURE ON)
     else() 
         if(EXISTS ${INCLUDE_EXPORT_PATH})
@@ -301,6 +300,7 @@ function(find_extproject name)
              DESTINATION ${_INST_ROOT_PATH}
              COMPONENT libraries)
 
+    message(STATUS "EXPORTS_PATHS ${EXPORTS_PATHS}")
     set(EXPORTS_PATHS ${EXPORTS_PATHS} PARENT_SCOPE)
     set(LINK_SEARCH_PATHS ${LINK_SEARCH_PATHS} ${INCLUDE_LINK_SEARCH_PATHS} ${EP_BASE}/Install/${name}_EP/lib PARENT_SCOPE)
 endfunction()
