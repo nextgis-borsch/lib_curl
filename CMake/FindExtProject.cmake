@@ -31,7 +31,7 @@ function(get_imported_targets file_to_search targets)
     set(${targets} ${targets_local} PARENT_SCOPE)
 endfunction()
 
-function(get_target_name target_lib target_name)    
+function(get_target_name target_lib target_name)
     string(LENGTH ${target_lib} STR_LEN)
     if(STR_LEN LESS 21)
         return()
@@ -58,7 +58,7 @@ function(check_updates file_path update_period check)
     endif()
 endfunction()
 
-function(color_message text)
+macro(color_message text)
 
     string(ASCII 27 Esc)
     set(BoldGreen   "${Esc}[1;32m")
@@ -66,14 +66,14 @@ function(color_message text)
         
     message(STATUS "${BoldGreen}${text}${ColourReset}")
     
-endfunction() 
+endmacro()
 
-function(include_exports_path include_path)
+macro(include_exports_path include_path)
     #add to list imported 
     list(FIND EXPORTS_PATHS ${include_path} PATH_INDEX)
     if(PATH_INDEX EQUAL -1)
         list(APPEND EXPORTS_PATHS "${include_path}")
-        set(EXPORTS_PATHS "${EXPORTS_PATHS}" PARENT_SCOPE)
+        ##set(EXPORTS_PATHS "${EXPORTS_PATHS}" PARENT_SCOPE)
         # Add imported library have limit scope
         # During the export cmake add library without GLOBAL parameter and no
         # way to change this bihaviour. Let's fix it.
@@ -83,7 +83,7 @@ function(include_exports_path include_path)
         
         include(${include_path})
     endif()
-endfunction() 
+endmacro()
 
 function(find_extproject name)
   
@@ -213,9 +213,9 @@ function(find_extproject name)
         #execute_process(COMMAND ${GIT_EXECUTABLE} checkout master
         #    WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)
         file(WRITE ${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitclone-lastrun.txt "")
-        execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
-            ${find_extproject_CMAKE_ARGS}
-            WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)
+        #execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
+        #    ${find_extproject_CMAKE_ARGS}
+        #    WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)
         set(RECONFIGURE ON)
     else() 
         if(EXISTS ${INCLUDE_EXPORT_PATH})
@@ -276,7 +276,7 @@ function(find_extproject name)
                             set(IMPORTED_TARGET_PATH ${IMPORTED_TARGET_PATH} ${LINK_INTERFACE_LIB})
                         else()
                             message(STATUS "NO TARGET ${LINK_INTERFACE_LIB} -> INTERFACE_TARGET ${INTERFACE_TARGET}")
-                        endif()    
+                        endif()
                     endif()
                 endif()
             endforeach()
@@ -298,7 +298,7 @@ function(find_extproject name)
     install( DIRECTORY ${EP_BASE}/Install/${name}_EP/ 
              DESTINATION ${_INST_ROOT_PATH}
              COMPONENT libraries)
-        
+
     set(EXPORTS_PATHS ${EXPORTS_PATHS} PARENT_SCOPE)
-    set(LINK_SEARCH_PATHS ${LINK_SEARCH_PATHS} ${EP_BASE}/Install/${name}_EP/lib PARENT_SCOPE)
+    set(LINK_SEARCH_PATHS ${LINK_SEARCH_PATHS} ${INCLUDE_LINK_SEARCH_PATHS} ${EP_BASE}/Install/${name}_EP/lib PARENT_SCOPE)
 endfunction()
