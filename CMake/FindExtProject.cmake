@@ -181,20 +181,42 @@ function(find_extproject name)
       return()
     endif()
     
+                  
+    ExternalProject_Add(${name}_EP
+        GIT_REPOSITORY ${EP_URL}/${repo_name}
+        CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
+        UPDATE_DISCONNECTED 1
+    )
+    
     set(RECONFIGURE OFF)
     set(INCLUDE_EXPORT_PATH "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
 
     if(NOT EXISTS "${EP_BASE}/Source/${name}_EP/.git")
         color_message("Git clone ${repo_name} ...")
-        execute_process(COMMAND ${GIT_EXECUTABLE} clone ${EP_URL}/${repo_name} ${name}_EP
-           WORKING_DIRECTORY  ${EP_BASE}/Source)
-        #execute_process(COMMAND ${GIT_EXECUTABLE} checkout master
-        #    WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)
-        file(WRITE ${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitclone-lastrun.txt "")
-        #execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
-        #    ${find_extproject_CMAKE_ARGS}
-        #    WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)
-        set(RECONFIGURE ON)
+        
+        set(error_code 1)
+        set(number_of_tries 0)
+        while(error_code AND number_of_tries LESS 3)
+          execute_process(
+            COMMAND ${GIT_EXECUTABLE} clone ${EP_URL}/${repo_name} ${name}_EP
+            WORKING_DIRECTORY  ${EP_BASE}/Source
+            RESULT_VARIABLE error_code
+            )
+          math(EXPR number_of_tries "${number_of_tries} + 1")
+        endwhile()
+           
+        if(error_code)   
+            message(FATAL_ERROR "Failed to clone repository: ${EP_URL}/${repo_name}")
+            return()
+        else()
+            #execute_process(COMMAND ${GIT_EXECUTABLE} checkout master
+            #    WORKING_DIRECTORY  ${EP_BASE}/Source/${name}_EP)
+            file(WRITE ${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitclone-lastrun.txt "")
+            #execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
+            #    ${find_extproject_CMAKE_ARGS}
+            #    WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)
+            set(RECONFIGURE ON)
+        endif()   
     else() 
         if(EXISTS ${INCLUDE_EXPORT_PATH})
             check_updates(${EP_BASE}/Stamp/${name}_EP/${name}_EP-gitpull.txt ${PULL_UPDATE_PERIOD} CHECK_UPDATES)
@@ -217,16 +239,11 @@ function(find_extproject name)
     endif() 
 
     if(RECONFIGURE)
+        color_message("Configure ${repo_name} ...")
         execute_process(COMMAND ${CMAKE_COMMAND} ${EP_BASE}/Source/${name}_EP
             ${find_extproject_CMAKE_ARGS}
             WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)         
     endif()
-              
-    ExternalProject_Add(${name}_EP
-        GIT_REPOSITORY ${EP_URL}/${repo_name}
-        CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
-        UPDATE_DISCONNECTED 1
-    )
     
     if(EXISTS ${INCLUDE_EXPORT_PATH})
         get_imported_targets(${INCLUDE_EXPORT_PATH} IMPORTED_TARGETS)
