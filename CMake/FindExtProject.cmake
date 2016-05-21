@@ -85,10 +85,7 @@ function(include_exports_path include_path)
     endif()
 endfunction()
 
-function(find_extproject name)
-  
-    include (CMakeParseArguments)
-  
+function(find_extproject name)  
     set(options OPTIONAL)
     set(oneValueArgs SHARED)
     set(multiValueArgs CMAKE_ARGS)
@@ -129,10 +126,9 @@ function(find_extproject name)
         list(APPEND find_extproject_CMAKE_ARGS -DANDROID_NDK=${ANDROID_NDK})
         list(APPEND find_extproject_CMAKE_ARGS -DANDROID_NATIVE_API_LEVEL=${ANDROID_NATIVE_API_LEVEL})
         list(APPEND find_extproject_CMAKE_ARGS -DANDROID_ABI=${ANDROID_ABI})
-        list(APPEND find_extproject_CMAKE_ARGS -DANDROID=TRUE)
+        list(APPEND find_extproject_CMAKE_ARGS -DANDROID=ON)
     endif()     
         
-    include(ExternalProject)
     set_property(DIRECTORY PROPERTY "EP_BASE" ${EP_BASE})
 
     
@@ -165,19 +161,7 @@ function(find_extproject name)
     if(CMAKE_GENERATOR_TOOLSET)
         list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET})
     endif() 
-    
-    if(EXISTS ${EP_BASE}/Build/${name}_EP/ext_options.cmake)         
-        include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)
 
-        # add include into  ext_options.cmake
-        set(WITHOPT "${WITHOPT}include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)\n" PARENT_SCOPE)   
-       
-        foreach(INCLUDE_EXPORT_PATH ${INCLUDE_EXPORTS_PATHS})   
-            include_exports_path(${INCLUDE_EXPORT_PATH})
-        endforeach()
-        unset(INCLUDE_EXPORT_PATH)
-    endif()
-    
     get_cmake_property(_variableNames VARIABLES)
     string (REGEX MATCHALL "(^|;)WITH_[A-Za-z0-9_]*" _matchedVars "${_variableNames}") 
     foreach(_variableName ${_matchedVars})
@@ -189,21 +173,14 @@ function(find_extproject name)
     
         
     # get some properties from <cmakemodules>/findext${name}.cmake file
-    include(FindExt${name})
-    
+    include(FindExt${name})    
         
     find_exthost_package(Git)
     if(NOT GIT_FOUND)
       message(FATAL_ERROR "git is required")
       return()
     endif()
-      
-    ExternalProject_Add(${name}_EP
-        GIT_REPOSITORY ${EP_URL}/${repo_name}
-        CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
-        UPDATE_DISCONNECTED 1
-    )
-   
+    
     set(RECONFIGURE OFF)
     set(INCLUDE_EXPORT_PATH "${EP_BASE}/Build/${name}_EP/${repo_project}-exports.cmake")
 
@@ -244,6 +221,12 @@ function(find_extproject name)
             ${find_extproject_CMAKE_ARGS}
             WORKING_DIRECTORY ${EP_BASE}/Build/${name}_EP)         
     endif()
+              
+    ExternalProject_Add(${name}_EP
+        GIT_REPOSITORY ${EP_URL}/${repo_name}
+        CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
+        UPDATE_DISCONNECTED 1
+    )
     
     if(EXISTS ${INCLUDE_EXPORT_PATH})
         get_imported_targets(${INCLUDE_EXPORT_PATH} IMPORTED_TARGETS)
@@ -255,6 +238,18 @@ function(find_extproject name)
     else()
         message(WARNING "The path ${INCLUDE_EXPORT_PATH} not exist")
         return()
+    endif()    
+        
+    if(EXISTS ${EP_BASE}/Build/${name}_EP/ext_options.cmake)         
+        include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)
+
+        # add include into  ext_options.cmake
+        set(WITHOPT "${WITHOPT}include(${EP_BASE}/Build/${name}_EP/ext_options.cmake)\n" PARENT_SCOPE)   
+       
+        foreach(INCLUDE_EXPORT_PATH ${INCLUDE_EXPORTS_PATHS})   
+            include_exports_path(${INCLUDE_EXPORT_PATH})
+        endforeach()
+        unset(INCLUDE_EXPORT_PATH)
     endif()
     
     add_dependencies(${IMPORTED_TARGETS} ${name}_EP)  
