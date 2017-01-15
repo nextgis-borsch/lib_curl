@@ -5,7 +5,7 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2015, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -22,9 +22,12 @@
 
 #include "curl_setup.h"
 
+#include <curl/curl.h>
+
 #include "hash.h"
 #include "llist.h"
 #include "curl_memory.h"
+
 /* The last #include file should be: */
 #include "memdebug.h"
 
@@ -132,7 +135,7 @@ Curl_hash_add(struct curl_hash *h, void *key, size_t key_len, void *p)
 {
   struct curl_hash_element  *he;
   struct curl_llist_element *le;
-  struct curl_llist *l = FETCH_LIST (h, key, key_len);
+  struct curl_llist *l = FETCH_LIST(h, key, key_len);
 
   for(le = l->head; le; le = le->next) {
     he = (struct curl_hash_element *) le->ptr;
@@ -288,9 +291,9 @@ Curl_hash_clean_with_criterium(struct curl_hash *h, void *user,
   }
 }
 
-size_t Curl_hash_str(void* key, size_t key_length, size_t slots_num)
+size_t Curl_hash_str(void *key, size_t key_length, size_t slots_num)
 {
-  const char* key_str = (const char *) key;
+  const char *key_str = (const char *) key;
   const char *end = key_str + key_length;
   unsigned long h = 5381;
 

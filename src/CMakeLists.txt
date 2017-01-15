@@ -1,6 +1,4 @@
-# Modified by Mikhail Gusev (gusevmihs@gmail.com) for NextGIS Build System.
-
-set(EXE_NAME curlapp)
+set(EXE_NAME curl)
 
 if(USE_MANUAL)
   find_package(Perl REQUIRED)
@@ -51,9 +49,13 @@ add_executable(
   ${CURL_FILES}
   )
 
-source_group("cURLX source files" FILES ${CURLX_CFILES})
-source_group("cURL source files" FILES ${CURL_CFILES})
-source_group("cURL header files" FILES ${CURL_HFILES})
+if(OSX_FRAMEWORK)
+    set_target_properties(${EXE_NAME} PROPERTIES INSTALL_RPATH "@executable_path/../../../../Library/Frameworks")
+endif()
+
+source_group("curlX source files" FILES ${CURLX_CFILES})
+source_group("curl source files" FILES ${CURL_CFILES})
+source_group("curl header files" FILES ${CURL_HFILES})
 
 include_directories(
   ${CURL_SOURCE_DIR}/lib        # To be able to reach "curl_setup_once.h"
@@ -79,4 +81,9 @@ set_target_properties(${EXE_NAME} PROPERTIES
 
 #INCLUDE(ModuleInstall OPTIONAL)
 
-install(TARGETS ${EXE_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(NOT SKIP_INSTALL_EXECUTABLES AND NOT SKIP_INSTALL_ALL )
+    install(TARGETS ${EXE_NAME}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT applications
+        FRAMEWORK DESTINATION ${INSTALL_BIN_DIR}
+    )
+endif()

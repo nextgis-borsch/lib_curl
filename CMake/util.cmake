@@ -1,5 +1,5 @@
 ################################################################################
-# Project:  Lib jbig
+# Project:  Lib Curl
 # Purpose:  CMake build scripts
 # Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nexgis.com
 ################################################################################
@@ -48,6 +48,9 @@ function(check_version major minor rev)
     set(${minor} ${MINOR_VERSION} PARENT_SCOPE)
     set(${rev} ${REV_VERSION} PARENT_SCOPE)
 
+    # Store version string in file for installer needs
+    file(TIMESTAMP ${VERSION_FILE} VERSION_DATETIME "%Y-%m-%d %H:%M:%S" UTC)
+    file(WRITE ${CMAKE_BINARY_DIR}/version.str "${MAJOR_VERSION}.${MINOR_VERSION}.${REV_VERSION}\n${VERSION_DATETIME}")
 endfunction(check_version)
 
 

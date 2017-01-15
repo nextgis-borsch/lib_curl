@@ -179,26 +179,19 @@ int main(void) {
 
 
 include(CheckCSourceRuns)
-set(CMAKE_REQUIRED_FLAGS)
-if(HAVE_SYS_POLL_H)
-  set(CMAKE_REQUIRED_FLAGS "-DHAVE_SYS_POLL_H")
-endif(HAVE_SYS_POLL_H)
-if(CMAKE_CROSSCOMPILING)
-check_c_source_compiles("
-  #ifdef HAVE_SYS_POLL_H
-  #  include <sys/poll.h>
-  #endif
-  int main(void) {
-    return poll((void *)0, 0, 10 /*ms*/);
-  }" HAVE_POLL_FINE)
-else()
-check_c_source_runs("
-  #ifdef HAVE_SYS_POLL_H
-  #  include <sys/poll.h>
-  #endif
-  int main(void) {
-    return poll((void *)0, 0, 10 /*ms*/);
-  }" HAVE_POLL_FINE)
+# See HAVE_POLL in CMakeLists.txt for why poll is disabled on macOS
+if(NOT APPLE)
+  set(CMAKE_REQUIRED_FLAGS)
+  if(HAVE_SYS_POLL_H)
+    set(CMAKE_REQUIRED_FLAGS "-DHAVE_SYS_POLL_H")
+  endif(HAVE_SYS_POLL_H)
+  check_c_source_runs("
+    #ifdef HAVE_SYS_POLL_H
+    #  include <sys/poll.h>
+    #endif
+    int main(void) {
+      return poll((void *)0, 0, 10 /*ms*/);
+    }" HAVE_POLL_FINE)
 endif()
 
 set(HAVE_SIG_ATOMIC_T 1)

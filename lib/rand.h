@@ -1,5 +1,5 @@
-#ifndef HEADER_CURL_STREQUAL_H
-#define HEADER_CURL_STREQUAL_H
+#ifndef HEADER_CURL_RAND_H
+#define HEADER_CURL_RAND_H
 /***************************************************************************
  *                                  _   _ ____  _
  *  Project                     ___| | | |  _ \| |
@@ -7,7 +7,7 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2013, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -22,10 +22,22 @@
  *
  ***************************************************************************/
 
-#include <curl/curl.h>
+/*
+ * Curl_rand() stores 'num' number of random unsigned integers in the buffer
+ * 'rnd' points to.
+ *
+ * If libcurl is built without TLS support or with a TLS backend that lacks a
+ * proper random API (Gskit, PolarSSL or mbedTLS), this function will use
+ * "weak" random.
+ *
+ * When built *with* TLS support and a backend that offers strong random, it
+ * will return error if it cannot provide strong random values.
+ *
+ * NOTE: 'data' may be passed in as NULL when coming from external API without
+ * easy handle!
+ *
+ */
+CURLcode Curl_rand(struct Curl_easy *data, unsigned int *rnd,
+                   unsigned int num);
 
-#define strequal(a,b) curl_strequal(a,b)
-#define strnequal(a,b,c) curl_strnequal(a,b,c)
-
-#endif /* HEADER_CURL_STREQUAL_H */
-
+#endif /* HEADER_CURL_RAND_H */

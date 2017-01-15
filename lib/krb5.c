@@ -47,9 +47,9 @@
 #include "sendf.h"
 #include "curl_sec.h"
 #include "warnless.h"
-#include "curl_printf.h"
 
-/* The last #include files should be: */
+/* The last 3 #include files should be in this order */
+#include "curl_printf.h"
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -121,7 +121,7 @@ krb5_encode(void *app_data, const void *from, int length, int level, void **to)
   /* NOTE that the cast is safe, neither of the krb5, gnu gss and heimdal
    * libraries modify the input buffer in gss_seal()
    */
-  dec.value = (void*)from;
+  dec.value = (void *)from;
   dec.length = length;
   maj = gss_seal(&min, *context,
                  level == PROT_PRIVATE,
@@ -150,9 +150,12 @@ krb5_auth(void *app_data, struct connectdata *conn)
   const char *host = conn->host.name;
   ssize_t nread;
   curl_socklen_t l = sizeof(conn->local_addr);
-  struct SessionHandle *data = conn->data;
+  struct Curl_easy *data = conn->data;
   CURLcode result;
-  const char *service = "ftp", *srv_host = "host";
+  const char *service = data->set.str[STRING_SERVICE_NAME] ?
+                        data->set.str[STRING_SERVICE_NAME] :
+                        "ftp";
+  const char *srv_host = "host";
   gss_buffer_desc input_buffer, output_buffer, _gssresp, *gssresp;
   OM_uint32 maj, min;
   gss_name_t gssname;
@@ -179,10 +182,10 @@ krb5_auth(void *app_data, struct connectdata *conn)
   for(;;) {
     /* this really shouldn't be repeated here, but can't help it */
     if(service == srv_host) {
-      result = Curl_ftpsendf(conn, "AUTH GSSAPI");
-
+      result = Curl_ftpsend(conn, "AUTH GSSAPI");
       if(result)
         return -2;
+
       if(Curl_GetFTPResponse(&nread, conn, NULL))
         return -1;
 
@@ -240,16 +243,22 @@ krb5_auth(void *app_data, struct connectdata *conn)
       }
 
       if(output_buffer.length != 0) {
+        char *cmd;
+
         result = Curl_base64_encode(data, (char *)output_buffer.value,
                                     output_buffer.length, &p, &base64_sz);
         if(result) {
           Curl_infof(data, "base64-encoding: %s\n",
                      curl_easy_strerror(result));
-          ret = AUTH_CONTINUE;
+          ret = AUTH_ERROR;
           break;
         }
 
-        result = Curl_ftpsendf(conn, "ADAT %s", p);
+        cmd = aprintf("ADAT %s", p);
+        if(cmd)
+          result = Curl_ftpsend(conn, cmd);
+        else
+          result = CURLE_OUT_OF_MEMORY;
 
         free(p);
 

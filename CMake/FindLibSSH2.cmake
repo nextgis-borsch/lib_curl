@@ -1,4 +1,3 @@
-
 # - Try to find the libssh2 library
 # Once done this will define
 #
