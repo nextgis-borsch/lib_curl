@@ -29,7 +29,7 @@
 
 # Build
 /build
-/install
+/inst
 
 #temp files
 *~
