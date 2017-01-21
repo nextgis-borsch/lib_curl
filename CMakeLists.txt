@@ -1285,7 +1285,7 @@ if (REGISTER_PACKAGE)
     configure_package_config_file(
         ${CMAKE_SOURCE_DIR}/CMake/PackageConfig.cmake.in
         ${CMAKE_CURRENT_BINARY_DIR}/${EXPORT_PACKAGE_NAME}Config.cmake
-        INSTALL_DESTINATION ${INSTALL_LIB_DIR}/cmake
+        INSTALL_DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
         PATH_VARS INSTALL_INC_DIR )
     write_basic_package_version_file(
         ${CMAKE_CURRENT_BINARY_DIR}/${EXPORT_PACKAGE_NAME}ConfigVersion.cmake
