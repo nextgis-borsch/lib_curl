@@ -50,7 +50,7 @@ add_executable(
   )
 
 if(OSX_FRAMEWORK)
-    set_target_properties(${EXE_NAME} PROPERTIES INSTALL_RPATH "@executable_path/../../../../Library/Frameworks")
+    set_target_properties(${EXE_NAME} PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
 endif()
 
 source_group("curlX source files" FILES ${CURLX_CFILES})

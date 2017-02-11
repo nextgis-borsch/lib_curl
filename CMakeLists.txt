@@ -59,7 +59,7 @@ endif()
 
 if(OSX_FRAMEWORK)
     set(FRAMEWORK_NAME curl)
-    set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/Applications/${FRAMEWORK_NAME}.app/Contents/MacOS/" CACHE INTERNAL "Installation directory for executables" FORCE)
+    set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin/" CACHE INTERNAL "Installation directory for executables" FORCE)
     set(INSTALL_LIB_DIR "${CMAKE_INSTALL_PREFIX}/Library/Frameworks" CACHE INTERNAL "Installation directory for libraries" FORCE)
     set(INSTALL_INC_DIR "${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Headers" CACHE INTERNAL "Installation directory for headers" FORCE)
     set(SKIP_INSTALL_HEADERS ON)
