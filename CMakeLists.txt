@@ -336,7 +336,7 @@ endif()
 
 option(CMAKE_USE_OPENSSL "Use OpenSSL code" ON)
 if(CMAKE_USE_OPENSSL)
-    find_anyproject(OpenSSL VERSION 7.34)
+    find_anyproject(OpenSSL)
     if(WIN32)
       CMAKE_DEPENDENT_OPTION(CURL_WINDOWS_SSPI "Use windows libraries to allow NTLM authentication without openssl" ON
         "NOT WITH_OpenSSL" OFF)
@@ -371,7 +371,7 @@ if(CMAKE_USE_OPENSSL)
     elseif(WIN32)
         set(CURL_WINDOWS_SSPI ON)
     else()
-        message(FATAL_ERROR "OpenSSL is reguired")    
+        message(FATAL_ERROR "OpenSSL is reguired")
     endif()
 endif()
 
