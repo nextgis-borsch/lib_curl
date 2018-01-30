@@ -1,0 +1,66 @@
+# This is a generated file.  Do not edit.
+# OpenSSH 7.6.0 sshd configuration file for curl testing
+#
+DenyUsers !bishop
+AllowUsers bishop
+DenyGroups
+AllowGroups
+#
+AuthorizedKeysFile /Volumes/Data/work/projects/borsch/lib_curl/tests/curl_client_key.pub
+AuthorizedKeysFile2 /Volumes/Data/work/projects/borsch/lib_curl/tests/curl_client_key.pub
+HostKey /Volumes/Data/work/projects/borsch/lib_curl/tests/curl_host_rsa_key
+PidFile /Volumes/Data/work/projects/borsch/lib_curl/tests/.ssh_server.pid
+#
+Port 8999
+AddressFamily any
+ListenAddress 127.0.0.1
+Protocol 2
+#
+AllowTcpForwarding yes
+Banner none
+ChallengeResponseAuthentication no
+ClientAliveCountMax 3
+ClientAliveInterval 0
+GatewayPorts no
+HostbasedAuthentication no
+HostbasedUsesNameFromPacketOnly no
+IgnoreRhosts yes
+IgnoreUserKnownHosts yes
+KeyRegenerationInterval 0
+LoginGraceTime 30
+LogLevel DEBUG2
+MaxStartups 5
+PasswordAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+PrintLastLog no
+PrintMotd no
+PubkeyAuthentication yes
+RhostsRSAAuthentication no
+RSAAuthentication no
+ServerKeyBits 768
+StrictModes no
+Subsystem sftp "/usr/libexec/sftp-server"
+SyslogFacility AUTH
+UseLogin no
+X11Forwarding no
+#
+KerberosAuthentication no
+KerberosOrLocalPasswd no
+KerberosTicketCleanup yes
+SkeyAuthentication no
+GSSAPIAuthentication no
+GSSAPICleanupCredentials yes
+#
+AcceptEnv
+Compression no
+KbdInteractiveAuthentication no
+KeepAlive no
+MaxAuthTries 10
+PermitTunnel no
+PermitUserEnvironment no
+TCPKeepAlive no
+UseDNS no
+UsePAM no
+X11UseLocalhost yes
+#

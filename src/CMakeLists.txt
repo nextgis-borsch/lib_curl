@@ -1,7 +1,6 @@
 set(EXE_NAME curl)
 
 if(USE_MANUAL)
-  find_package(Perl REQUIRED)
   # Use the C locale to ensure that only ASCII characters appear in the
   # embedded text. NROFF and MANOPT are set in the parent CMakeLists.txt
   add_custom_command(
@@ -9,18 +8,19 @@ if(USE_MANUAL)
     COMMAND ${CMAKE_COMMAND} -E echo "#include \"tool_setup.h\"" > tool_hugehelp.c
     COMMAND ${CMAKE_COMMAND} -E echo "#ifndef HAVE_LIBZ" >> tool_hugehelp.c
     COMMAND env LC_ALL=C "${NROFF}" ${NROFF_MANOPT}
-            "${CURL_SOURCE_DIR}/docs/curl.1" |
-            "${PERL}" "${CMAKE_CURRENT_SOURCE_DIR}/mkhelp.pl"
+            "${CURL_BINARY_DIR}/docs/curl.1" |
+            "${PERL_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mkhelp.pl"
             "${CURL_SOURCE_DIR}/docs/MANUAL" >> tool_hugehelp.c
     COMMAND ${CMAKE_COMMAND} -E echo "#else" >> tool_hugehelp.c
     COMMAND env LC_ALL=C "${NROFF}" ${NROFF_MANOPT}
-            "${CURL_SOURCE_DIR}/docs/curl.1" |
-            "${PERL}" "${CMAKE_CURRENT_SOURCE_DIR}/mkhelp.pl" -c
+            "${CURL_BINARY_DIR}/docs/curl.1" |
+            "${PERL_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mkhelp.pl" -c
             "${CURL_SOURCE_DIR}/docs/MANUAL" >> tool_hugehelp.c
     COMMAND ${CMAKE_COMMAND} -E echo "#endif /* HAVE_LIBZ */" >> tool_hugehelp.c
     DEPENDS
       "${CURL_SOURCE_DIR}/docs/MANUAL"
-      "${CURL_SOURCE_DIR}/docs/curl.1"
+      generate-curl.1
+      "${CURL_BINARY_DIR}/docs/curl.1"
       "${CMAKE_CURRENT_SOURCE_DIR}/mkhelp.pl"
       "${CMAKE_CURRENT_SOURCE_DIR}/tool_hugehelp.h"
     VERBATIM)
@@ -40,7 +40,7 @@ transform_makefile_inc("Makefile.inc" "${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.
 include(${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.cmake)
 
 if(MSVC)
-  list(APPEND CURL_SOURCE curl.rc)
+  list(APPEND CURL_FILES curl.rc)
 endif()
 
 # CURL_FILES comes from Makefile.inc
@@ -48,6 +48,7 @@ add_executable(
   ${EXE_NAME}
   ${CURL_FILES}
   )
+
 
 if(OSX_FRAMEWORK)
     set_target_properties(${EXE_NAME} PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
@@ -65,9 +66,8 @@ include_directories(
   ${CURL_SOURCE_DIR}/src        # To be able to reach "tool_hugehelp.h"
   )
 
-#Build cURL executable
-# TODO: do we need target_link_extlibraries() here?
-target_link_libraries(${EXE_NAME} ${LIB_NAME} ${CURL_LIBS})
+#Build curl executable
+target_link_libraries( ${EXE_NAME} libcurl ${CURL_LIBS})
 
 ################################################################################
 
@@ -78,7 +78,7 @@ target_link_libraries(${EXE_NAME} ${LIB_NAME} ${CURL_LIBS})
 # Add the postfix to the executable since it is not added automatically as for modules and shared libraries
 set_target_properties(${EXE_NAME} PROPERTIES
   DEBUG_POSTFIX "${CMAKE_DEBUG_POSTFIX}")
-
+  
 #INCLUDE(ModuleInstall OPTIONAL)
 
 if(NOT SKIP_INSTALL_EXECUTABLES AND NOT SKIP_INSTALL_ALL )

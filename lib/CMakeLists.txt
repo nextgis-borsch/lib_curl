@@ -1,7 +1,9 @@
 # Modified by Mikhail Gusev (gusevmihs@gmail.com) for NextGIS Build System.
+# Modified by Dmitry Baryshnikov (dmitry.baryshnikov@nextgis.com) to fit NextGIS Borsch v2
+# Copyright (C) 2015-2018, NextGIS <info@nextgis.com>
 
-configure_file(${CURL_SOURCE_DIR}/include/curl/curlbuild.h.cmake
-  ${CURL_BINARY_DIR}/include/curl/curlbuild.h)
+set(LIB_NAME libcurl)
+
 configure_file(curl_config.h.cmake
   ${CMAKE_CURRENT_BINARY_DIR}/curl_config.h)
 
@@ -10,11 +12,11 @@ include(${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.cmake)
 
 list(APPEND HHEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/curl_config.h
-  ${CURL_BINARY_DIR}/include/curl/curlbuild.h
   )
 
 if(MSVC)
   list(APPEND CSOURCES libcurl.rc)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /wd4127")
 endif()
 
 # SET(CSOURCES
@@ -61,31 +63,22 @@ if(USE_ARES)
   include_directories(${CARES_INCLUDE_DIR})
 endif()
 
-#if(CURL_STATICLIB)
-if(NOT BUILD_SHARED_LIBS)
+if(CURL_STATICLIB)
   # Static lib
-    set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
-    if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
-        set( CMAKE_CXX_FLAGS "-fpic ${CMAKE_CXX_FLAGS}" )
-        set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )
-    endif()
+  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
 else()
   # DLL / so dynamic lib
   set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC SHARED)
 endif()
 
 if(OSX_FRAMEWORK)
-    set(INST_HEADER
-        ${CURL_BINARY_DIR}/include/curl/curlbuild.h
-        ${CURL_SOURCE_DIR}/include/curl/curl.h
-        ${CURL_SOURCE_DIR}/include/curl/curlrules.h
-        ${CURL_SOURCE_DIR}/include/curl/curlver.h
-        ${CURL_SOURCE_DIR}/include/curl/easy.h
-        ${CURL_SOURCE_DIR}/include/curl/mprintf.h
-        ${CURL_SOURCE_DIR}/include/curl/multi.h
-        ${CURL_SOURCE_DIR}/include/curl/stdcheaders.h
-        ${CURL_SOURCE_DIR}/include/curl/typecheck-gcc.h
+    set(OUT_LIB_NAME curl)
+    file(GLOB INST_HEADER ${CURL_SOURCE_DIR}/include/curl/*.h)
+    set(INST_HEADER ${INST_HEADER}
+        ${CMAKE_CURRENT_BINARY_DIR}/curl_config.h
     )
+    set_property(SOURCE ${INST_HEADER} PROPERTY MACOSX_PACKAGE_LOCATION "Headers/curl")
+
     add_library(${LIB_NAME} SHARED ${HHEADERS} ${CSOURCES} ${INST_HEADER})
     set_target_properties(${LIB_NAME} PROPERTIES
       FRAMEWORK TRUE
@@ -94,45 +87,23 @@ if(OSX_FRAMEWORK)
       MACOSX_FRAMEWORK_BUNDLE_VERSION ${VERSION}
       MACOSX_FRAMEWORK_IDENTIFIER org.curl.libcurl
       XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
-      PUBLIC_HEADER "${INST_HEADER}"
+      # PUBLIC_HEADER "${INST_HEADER}"
       OUTPUT_NAME ${OUT_LIB_NAME}
     )
 else()
     add_library(${LIB_NAME} ${CURL_USER_DEFINED_DYNAMIC_OR_STATIC} ${HHEADERS} ${CSOURCES})
-    set_target_properties(${LIB_NAME} PROPERTIES OUTPUT_NAME ${OUT_LIB_NAME})
-    if(BUILD_SHARED_LIBS AND BUILD_STATIC_LIBS)
-        add_library(${LIB_NAME}static STATIC ${HHEADERS} ${CSOURCES})
-        set(INSTALL_TARGETS ${INSTALL_TARGETS} ${LIB_NAME}static)
-        if(WIN32)
-            set_target_properties(${LIB_NAME}static PROPERTIES OUTPUT_NAME ${OUT_LIB_NAME}_i)
-        else()
-            set_target_properties(${LIB_NAME}static PROPERTIES OUTPUT_NAME ${OUT_LIB_NAME})
-        endif()
-    endif()
 endif()
-set(INSTALL_TARGETS ${INSTALL_TARGETS} ${LIB_NAME})
+set(TARGETS ${TARGETS} ${LIB_NAME})
 
-
-if(MSVC AND NOT BUILD_SHARED_LIBS) # CURL_STATICLIB)
-    set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
-endif()
-
-if(BUILD_SHARED_LIBS OR OSX_FRAMEWORK)
-    if(WIN32)
-        set (LIB_VERSION ${CURL_MAJOR_VERSION})
-    else ()
-        set (LIB_VERSION ${CURL_VERSION})
-    endif()
-    set_target_properties (${LIB_NAME} PROPERTIES VERSION ${LIB_VERSION})
-    set_target_properties (${LIB_NAME} PROPERTIES SOVERSION ${CURL_MAJOR_VERSION})
+if(MSVC AND CURL_STATICLIB)
+  set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
 endif()
 
 set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${CURL_LIBS})
 target_link_extlibraries(${LIB_NAME}) # only supported external libraries
-#target_link_libraries(${LIB_NAME} ${CURL_LIBS} ${TARGET_LINK_LIB})
 
 if(WIN32)
-  add_definitions(-D_USRDLL)
+  add_definitions( -D_USRDLL )
 endif()
 
 set_target_properties(${LIB_NAME} PROPERTIES COMPILE_DEFINITIONS BUILDING_LIBCURL)
@@ -143,23 +114,54 @@ if(HIDES_CURL_PRIVATE_SYMBOLS)
 endif()
 
 # Remove the "lib" prefix since the library is already named "libcurl".
-#set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
-#set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
+set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
+set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
-# if(WIN32)
-#   if(BUILD_SHARED_LIBS)#NOT CURL_STATICLIB)
-#     # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
-#     set_target_properties(${LIB_NAME} PROPERTIES IMPORT_SUFFIX "_imp.lib")
-#   endif()
-# endif()
+if(WIN32)
+  if(NOT CURL_STATICLIB)
+    # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
+    set_target_properties(${LIB_NAME} PROPERTIES IMPORT_SUFFIX "_imp.lib")
+
+    set_target_properties (${LIB_NAME} PROPERTIES
+       DEBUG_POSTFIX "-d"
+       # Note: no postfix for release variants, let user choose what style of release he wants
+       # MINSIZEREL_POSTFIX "-z"
+       # RELWITHDEBINFO_POSTFIX "-g"
+       )
+  endif()
+endif()
+
 
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     install(TARGETS ${LIB_NAME}
-        ARCHIVE DESTINATION ${INSTALL_LIB_DIR} COMPONENT libraries
-        LIBRARY DESTINATION ${INSTALL_LIB_DIR} COMPONENT libraries
-        RUNTIME DESTINATION ${INSTALL_BIN_DIR} COMPONENT libraries
-        FRAMEWORK DESTINATION ${INSTALL_LIB_DIR}
-    )
+        EXPORT ${PACKAGE_UPPER_NAME}Targets
+        RUNTIME DESTINATION ${INSTALL_BIN_DIR}
+        LIBRARY DESTINATION ${INSTALL_LIB_DIR}
+        ARCHIVE DESTINATION ${INSTALL_LIB_DIR}
+        INCLUDES DESTINATION ${INSTALL_INC_DIR}
+        FRAMEWORK DESTINATION ${INSTALL_LIB_DIR} )
 endif()
 
-set(EXPORT_TARGETS ${EXPORT_TARGETS} ${INSTALL_TARGETS} PARENT_SCOPE)
+# Add path to includes to build-tree export
+target_include_directories(${TARGETS} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+)
+
+# Add all targets to the build-tree export set
+export(TARGETS ${TARGETS}
+    FILE ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Targets.cmake)
+
+# Create the CURLConfig.cmake file
+configure_file(${PROJECT_SOURCE_DIR}/CMake/PackageConfig.cmake.in
+    ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake @ONLY)
+
+if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
+    # Install the <Package>Config.cmake
+    install(FILES
+      ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake
+      DESTINATION ${INSTALL_CMAKECONF_DIR} COMPONENT dev)
+
+    # Install the export set for use with the install-tree
+    install(EXPORT ${PACKAGE_UPPER_NAME}Targets DESTINATION ${INSTALL_CMAKECONF_DIR} COMPONENT dev)
+endif()
