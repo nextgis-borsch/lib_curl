@@ -6,14 +6,14 @@ docs/libcurl/opts,docs/libcurl/opts,,"inc,3,txt"
 docs/cmdline-opts,docs/cmdline-opts,,"inc,3,pl,txt,d,page-footer,page-header"
 include,include,,README
 include/curl,include/curl,,h
-lib,lib,,"c,h,inc,cmake,h,cmake"
+lib,lib,,"c,h,inc,cmake,h,cmake,rc"
 lib/vauth,lib/vauth,,"c,h"
 lib/vtls,lib/vtls,,"c,h"
 m4,,skip,
 packages,,skip,
 projects,,skip,
 scripts,,skip,
-src,src,,"c,h,inc,pl"
+src,src,,"c,h,inc,pl,rc"
 src/macos,,skip,
 tests,tests,,"txt,pl,pm"
 tests/data,tests/data,,"inc,txt,DISABLED,test[1-2080]"
