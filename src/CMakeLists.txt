@@ -78,7 +78,7 @@ target_link_libraries( ${EXE_NAME} libcurl ${CURL_LIBS})
 # Add the postfix to the executable since it is not added automatically as for modules and shared libraries
 set_target_properties(${EXE_NAME} PROPERTIES
   DEBUG_POSTFIX "${CMAKE_DEBUG_POSTFIX}")
-  
+
 #INCLUDE(ModuleInstall OPTIONAL)
 
 if(NOT SKIP_INSTALL_EXECUTABLES AND NOT SKIP_INSTALL_ALL )
@@ -86,4 +86,20 @@ if(NOT SKIP_INSTALL_EXECUTABLES AND NOT SKIP_INSTALL_ALL )
         RUNTIME DESTINATION ${INSTALL_BIN_DIR} COMPONENT applications
         FRAMEWORK DESTINATION ${INSTALL_BIN_DIR}
     )
+endif()
+
+if(BUILD_TESTING AND WIN32)
+    file(GLOB_RECURSE IMPORTED_WIN_DLLS ${CMAKE_BINARY_DIR}/third-party/*.dll)
+    foreach(IMPORTED_WIN_DLL ${IMPORTED_WIN_DLLS})
+        add_custom_command(TARGET curl
+                            POST_BUILD
+                            COMMAND ${CMAKE_COMMAND} -E copy ${IMPORTED_WIN_DLL} $<TARGET_FILE_DIR:curl>
+                            COMMENT "Copy ${IMPORTED_WIN_DLL} to $<TARGET_FILE_DIR:curl>"
+                        )
+    endforeach()
+    add_custom_command(TARGET curl
+                        POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libcurl> $<TARGET_FILE_DIR:curl>
+                        COMMENT "Copy $<TARGET_FILE:libcurl> to $<TARGET_FILE_DIR:curl>"
+                    )
 endif()
