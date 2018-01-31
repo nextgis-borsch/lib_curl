@@ -1,4 +1,4 @@
-,,,"CHANGES,COPYING,README,RELEASE-NOTES"
+,,,"CHANGES,COPYING,README,RELEASE-NOTES,in"
 CMake,CMake,,"c,h,Macros.cmake,OtherTests.cmake,Utilities.cmake,in,CurlSymbolHiding.cmake"
 docs,docs,,"README,txt,MANUAL"
 docs/libcurl,docs/libcurl,,"inc,3,pl,symbols-in-versions,txt"
