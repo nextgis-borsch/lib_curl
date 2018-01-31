@@ -1198,8 +1198,9 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)
+  # Windows skipp tests !1022 !1023 !1026 !1027 !1135
   add_test(NAME runtests
-    COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtests.pl -c $<TARGET_FILE:curl> !702 !703 !1013 !1014 !1022 !1023 !1026 !1119 !1139 !1140 !1221 !1222
+    COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtests.pl -c $<TARGET_FILE:curl> !702 !703 !1013 !1014 !1022 !1023 !1026 !1027 !1135 !1119 !1139 !1140 !1221 !1222
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 endif()
 
