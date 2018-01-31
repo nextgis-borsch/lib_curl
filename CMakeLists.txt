@@ -67,6 +67,9 @@ if(OSX_FRAMEWORK AND (BUILD_SHARED_LIBS OR BUILD_STATIC_LIBS))
                        and BUILD_STATIC_LIBS keys are permitted")
 endif()
 
+set(PACKAGE_NAME curl)
+string(TOUPPER ${PACKAGE_NAME} PACKAGE_UPPER_NAME)
+
 if(OSX_FRAMEWORK)
     set(FRAMEWORK_NAME curl)
     set(INSTALL_BIN_DIR "bin/" CACHE INTERNAL "Installation directory for executables" FORCE)
@@ -83,15 +86,12 @@ else()
     set(INSTALL_BIN_DIR ${CMAKE_INSTALL_BINDIR} CACHE INTERNAL "Installation directory for executables" FORCE)
     set(INSTALL_LIB_DIR ${CMAKE_INSTALL_LIBDIR} CACHE INTERNAL "Installation directory for libraries" FORCE)
     set(INSTALL_INC_DIR ${CMAKE_INSTALL_INCLUDEDIR} CACHE INTERNAL "Installation directory for headers" FORCE)
-    set(INSTALL_CMAKECONF_DIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
+    set(INSTALL_CMAKECONF_DIR ${CMAKE_INSTALL_DATADIR}/${PACKAGE_NAME}/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
 endif()
 
 if(CMAKE_GENERATOR_TOOLSET MATCHES "v([0-9]+)_xp")
     add_definitions(-D_WIN32_WINNT=0x0501)
 endif()
-
-set(PACKAGE_NAME curl)
-string(TOUPPER ${PACKAGE_NAME} PACKAGE_UPPER_NAME)
 
 include(util)
 
