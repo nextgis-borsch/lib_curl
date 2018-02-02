@@ -45,13 +45,17 @@ function(get_binary_package repo repo_type exact_version download_url name)
         # Get assets files.
         file(READ ${CMAKE_CURRENT_BINARY_DIR}/${repo}_latest.json _JSON_CONTENTS)
 
+        if(BUILD_STATIC_LIBS)
+            set(STATIC_PREFIX "static-")
+        endif()
+
         include(JSONParser)
         sbeParseJson(api_request _JSON_CONTENTS)
         foreach(asset_id ${api_request.assets})
             if(exact_version)
-                string(FIND ${api_request.assets_${asset_id}.browser_download_url} "${exact_version}-${COMPILER}.zip" IS_FOUND)
+                string(FIND ${api_request.assets_${asset_id}.browser_download_url} "${STATIC_PREFIX}${exact_version}-${COMPILER}.zip" IS_FOUND)
             else()
-                string(FIND ${api_request.assets_${asset_id}.browser_download_url} "${COMPILER}.zip" IS_FOUND)
+                string(FIND ${api_request.assets_${asset_id}.browser_download_url} "${STATIC_PREFIX}${COMPILER}.zip" IS_FOUND)
             endif()
             if(IS_FOUND GREATER 0)
                 color_message("Found binary package ${api_request.assets_${asset_id}.browser_download_url}")
@@ -112,7 +116,7 @@ function(find_extproject name)
             WORKING_DIRECTORY ${EXT_INSTALL_DIR}
         )
         # Execute find_package and send version, libraries, includes upper cmake script.
-        if(OSX_FRAMEWORK)
+        if(OSX_FRAMEWORK AND EXISTS ${EXT_INSTALL_DIR}/${BINARY_NAME}/Library/Frameworks)
             set(CMAKE_PREFIX_PATH ${EXT_INSTALL_DIR}/${BINARY_NAME}/Library/Frameworks)
         else()
             set(CMAKE_PREFIX_PATH ${EXT_INSTALL_DIR}/${BINARY_NAME})
@@ -254,6 +258,13 @@ function(find_extproject name)
 
     if(DEFINED ENABLE_NEON)
         list(APPEND find_extproject_CMAKE_ARGS -DENABLE_NEON=${ENABLE_NEON})
+    endif()
+
+    if(DEFINED CMAKE_OSX_SYSROOT)
+        list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT})
+    endif()
+    if(DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+        list(APPEND find_extproject_CMAKE_ARGS -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
     endif()
 
     set_property(DIRECTORY PROPERTY "EP_PREFIX" ${EP_PREFIX})
