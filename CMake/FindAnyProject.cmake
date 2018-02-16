@@ -192,7 +192,7 @@ endfunction()
 function(target_link_extlibraries name)
     if(TARGET_LINK_LIB)
         #list(REMOVE_DUPLICATES TARGET_LINK_LIB) debug;...;optimised;... etc. if filter out
-        target_link_libraries(${name} ${TARGET_LINK_LIB})
+        target_link_libraries(${name} PRIVATE ${TARGET_LINK_LIB})
     endif()
 
 endfunction()
