@@ -1,4 +1,4 @@
-# curl library with modified build scripts
+# CURL library with modified build scripts
 
 This is [curl](https://curl.haxx.se/) library with modifications in build scripts to support
 [NextGIS Borsch](https://github.com/nextgis-borsch/borsch) building system. NextGIS Borsch helps to resolve
