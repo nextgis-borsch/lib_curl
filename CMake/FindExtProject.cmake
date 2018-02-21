@@ -363,6 +363,7 @@ function(find_extproject name)
         GIT_SHALLOW TRUE
         CMAKE_ARGS ${find_extproject_CMAKE_ARGS}
         UPDATE_DISCONNECTED ${EXT_UPDATE_DISCONNECTED}
+        DOWNLOAD_COMMAND "" # Git clone is executed below
     )
 
     if(NOT EXISTS "${EXT_SOURCE_DIR}/.git")
