@@ -73,11 +73,7 @@ function( get_cpack_filename ver name )
         set(STATIC_PREFIX "static-")
     endif()
 
-    if(BUILD_SHARED_LIBS OR OSX_FRAMEWORK)
-        set(${name} ${PACKAGE_NAME}-${STATIC_PREFIX}${ver}-${COMPILER} PARENT_SCOPE)
-    else()
-        set(${name} ${PACKAGE_NAME}-${STATIC_PREFIX}${ver}-${COMPILER} PARENT_SCOPE)
-    endif()
+    set(${name} ${PACKAGE_NAME}-${STATIC_PREFIX}${ver}-${COMPILER} PARENT_SCOPE)
 endfunction()
 
 function( get_compiler_version ver )
