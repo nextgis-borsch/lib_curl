@@ -185,6 +185,15 @@ if(NOT APPLE)
   if(HAVE_SYS_POLL_H)
     set(CMAKE_REQUIRED_FLAGS "-DHAVE_SYS_POLL_H")
   endif()
+  if(ANDROID) # Crosscompile not support testrun
+      check_c_source_compiles("
+        #ifdef HAVE_SYS_POLL_H
+        #  include <sys/poll.h>
+        #endif
+        int main(void) {
+          return poll((void *)0, 0, 10 /*ms*/);
+        }" HAVE_POLL_FINE)
+  else()
   check_c_source_runs("
     #ifdef HAVE_SYS_POLL_H
     #  include <sys/poll.h>
@@ -192,6 +201,7 @@ if(NOT APPLE)
     int main(void) {
       return poll((void *)0, 0, 10 /*ms*/);
     }" HAVE_POLL_FINE)
+  endif()
 endif()
 
 set(HAVE_SIG_ATOMIC_T 1)
