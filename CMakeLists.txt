@@ -255,7 +255,7 @@ CMAKE_DEPENDENT_OPTION(ENABLE_MANUAL "to provide the built-in manual"
     ON "NROFF_USEFUL;PERL_FOUND"
     OFF)
 
-if(NOT PERL_FOUND OR BUILD_STATIC_LIBS)
+if(NOT PERL_FOUND)
   message(STATUS "Perl not found, testing disabled.")
   set(BUILD_TESTING OFF)
 endif()
@@ -1214,7 +1214,7 @@ if(BUILD_CURL_EXE)
 endif()
 
 include(CTest)
-if(BUILD_TESTING)
+if(BUILD_TESTING AND NOT BUILD_STATIC_LIBS)
   add_subdirectory(tests)
   # Windows skipp tests !1022 !1023 !1026 !1027 !1135
   add_test(NAME runtests
