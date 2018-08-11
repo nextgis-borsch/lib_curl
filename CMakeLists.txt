@@ -255,7 +255,7 @@ CMAKE_DEPENDENT_OPTION(ENABLE_MANUAL "to provide the built-in manual"
     ON "NROFF_USEFUL;PERL_FOUND"
     OFF)
 
-if(NOT PERL_FOUND)
+if(NOT PERL_FOUND OR BUILD_STATIC_LIBS)
   message(STATUS "Perl not found, testing disabled.")
   set(BUILD_TESTING OFF)
 endif()
