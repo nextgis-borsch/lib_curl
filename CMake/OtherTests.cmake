@@ -185,7 +185,7 @@ if(NOT APPLE)
   if(HAVE_SYS_POLL_H)
     set(CMAKE_REQUIRED_FLAGS "-DHAVE_SYS_POLL_H")
   endif()
-  check_c_source_runs("
+  check_c_source_compiles("
     #ifdef HAVE_SYS_POLL_H
     #  include <sys/poll.h>
     #endif
