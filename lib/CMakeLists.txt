@@ -91,7 +91,7 @@ if(OSX_FRAMEWORK)
       OUTPUT_NAME ${OUT_LIB_NAME}
     )
 else()
-    add_library(${LIB_NAME}${HHEADERS} ${CSOURCES})
+    add_library(${LIB_NAME} ${HHEADERS} ${CSOURCES})
 endif()
 set(TARGETS ${TARGETS} ${LIB_NAME})
 
