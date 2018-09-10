@@ -4,10 +4,10 @@
 
 set(LIB_NAME libcurl)
 
-if(BUILD_SHARED_LIBS)
-  set(CURL_STATICLIB NO)
+if(BUILD_SHARED_LIBS OR OSX_FRAMEWORK)
+  set(CURL_STATICLIB OFF)
 else()
-  set(CURL_STATICLIB YES)
+  set(CURL_STATICLIB ON)
 endif()
 
 # Use:
@@ -93,7 +93,7 @@ if(OSX_FRAMEWORK)
 else()
     add_library(${LIB_NAME} ${HHEADERS} ${CSOURCES})
 endif()
-set(TARGETS ${TARGETS} ${LIB_NAME})
+set(EXPORT_TARGETS ${EXPORT_TARGETS} ${LIB_NAME})
 
 if(MSVC AND CURL_STATICLIB)
   set_target_properties(${LIB_NAME} PROPERTIES STATIC_LIBRARY_FLAGS ${CMAKE_EXE_LINKER_FLAGS})
@@ -135,14 +135,14 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
 endif()
 
 # Add path to includes to build-tree export
-target_include_directories(${TARGETS} PUBLIC
+target_include_directories(${EXPORT_TARGETS} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 )
 
 # Add all targets to the build-tree export set
-export(TARGETS ${TARGETS}
+export(TARGETS ${EXPORT_TARGETS}
     FILE ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Targets.cmake)
 
 # Create the CURLConfig.cmake file
