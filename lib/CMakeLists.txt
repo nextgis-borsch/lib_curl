@@ -4,6 +4,14 @@
 
 set(LIB_NAME libcurl)
 
+if(BUILD_SHARED_LIBS)
+  set(CURL_STATICLIB NO)
+else()
+  set(CURL_STATICLIB YES)
+endif()
+
+# Use:
+# * CURL_STATICLIB
 configure_file(curl_config.h.cmake
   ${CMAKE_CURRENT_BINARY_DIR}/curl_config.h)
 
@@ -63,14 +71,6 @@ if(USE_ARES)
   include_directories(${CARES_INCLUDE_DIR})
 endif()
 
-if(CURL_STATICLIB)
-  # Static lib
-  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC STATIC)
-else()
-  # DLL / so dynamic lib
-  set(CURL_USER_DEFINED_DYNAMIC_OR_STATIC SHARED)
-endif()
-
 if(OSX_FRAMEWORK)
     set(OUT_LIB_NAME curl)
     file(GLOB INST_HEADER ${CURL_SOURCE_DIR}/include/curl/*.h)
@@ -91,7 +91,7 @@ if(OSX_FRAMEWORK)
       OUTPUT_NAME ${OUT_LIB_NAME}
     )
 else()
-    add_library(${LIB_NAME} ${CURL_USER_DEFINED_DYNAMIC_OR_STATIC} ${HHEADERS} ${CSOURCES})
+    add_library(${LIB_NAME}${HHEADERS} ${CSOURCES})
 endif()
 set(TARGETS ${TARGETS} ${LIB_NAME})
 
@@ -118,19 +118,11 @@ set_target_properties(${LIB_NAME} PROPERTIES PREFIX "")
 set_target_properties(${LIB_NAME} PROPERTIES IMPORT_PREFIX "")
 
 if(WIN32)
-  if(NOT CURL_STATICLIB)
+  if(BUILD_SHARED_LIBS)
     # Add "_imp" as a suffix before the extension to avoid conflicting with the statically linked "libcurl.lib"
     set_target_properties(${LIB_NAME} PROPERTIES IMPORT_SUFFIX "_imp.lib")
-
-    set_target_properties (${LIB_NAME} PROPERTIES
-       DEBUG_POSTFIX "-d"
-       # Note: no postfix for release variants, let user choose what style of release he wants
-       # MINSIZEREL_POSTFIX "-z"
-       # RELWITHDEBINFO_POSTFIX "-g"
-       )
   endif()
 endif()
-
 
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     install(TARGETS ${LIB_NAME}
