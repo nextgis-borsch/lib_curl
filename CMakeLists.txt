@@ -526,6 +526,7 @@ if(NOT CURL_DISABLE_LDAP)
       endif()
     endif()
   endif()
+  unset(CMAKE_REQUIRED_LIBRARIES)
 endif()
 
 # No ldap, no ldaps.
