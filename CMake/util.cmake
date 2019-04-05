@@ -94,8 +94,6 @@ function( get_compiler_version ver )
         endif()
     endif()
 
-    set(COMPILER Clang-9.0)
-
     set(${ver} ${COMPILER} PARENT_SCOPE)
 endfunction()
 
