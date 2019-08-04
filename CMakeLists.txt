@@ -48,6 +48,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake;${CMAKE_MODULE_PATH}")
 include(Utilities)
 include(Macros)
 include(CMakeDependentOption)
+include(CheckCCompilerFlag)
 
 project( CURL C )
 
@@ -136,7 +137,7 @@ option(ENABLE_CURLDEBUG "Set to ON to build with TrackMemory feature enabled" OF
 
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_CLANG)
   if (PICKY_COMPILER)
-    foreach (_CCOPT -pedantic -Wall -W -Wpointer-arith -Wwrite-strings -Wunused -Wshadow -Winline -Wnested-externs -Wmissing-declarations -Wmissing-prototypes -Wno-long-long -Wfloat-equal -Wno-multichar -Wsign-compare -Wundef -Wno-format-nonliteral -Wendif-labels -Wstrict-prototypes -Wdeclaration-after-statement -Wstrict-aliasing=3 -Wcast-align -Wtype-limits -Wold-style-declaration -Wmissing-parameter-type -Wempty-body -Wclobbered -Wignored-qualifiers -Wconversion -Wno-sign-conversion -Wvla -Wdouble-promotion -Wno-system-headers)
+    foreach(_CCOPT -pedantic -Wall -W -Wpointer-arith -Wwrite-strings -Wunused -Wshadow -Winline -Wnested-externs -Wmissing-declarations -Wmissing-prototypes -Wno-long-long -Wfloat-equal -Wno-multichar -Wsign-compare -Wundef -Wno-format-nonliteral -Wendif-labels -Wstrict-prototypes -Wdeclaration-after-statement -Wstrict-aliasing=3 -Wcast-align -Wtype-limits -Wold-style-declaration -Wmissing-parameter-type -Wempty-body -Wclobbered -Wignored-qualifiers -Wconversion -Wno-sign-conversion -Wvla -Wdouble-promotion -Wno-system-headers -Wno-pedantic-ms-format)
       # surprisingly, CHECK_C_COMPILER_FLAG needs a new variable to store each new
       # test result in.
       check_c_compiler_flag(${_CCOPT} OPT${_CCOPT})
@@ -375,6 +376,10 @@ if(CURL_WINDOWS_SSPI)
 endif()
 
 if(CMAKE_USE_DARWINSSL)
+  message(FATAL_ERROR "The cmake option CMAKE_USE_DARWINSSL was renamed to CMAKE_USE_SECTRANSP.")
+endif()
+
+if(CMAKE_USE_SECTRANSP)
   find_library(COREFOUNDATION_FRAMEWORK "CoreFoundation")
   if(NOT COREFOUNDATION_FRAMEWORK)
       message(FATAL_ERROR "CoreFoundation framework not found")
@@ -386,7 +391,7 @@ if(CMAKE_USE_DARWINSSL)
   endif()
 
   set(SSL_ENABLED ON)
-  set(USE_DARWINSSL ON)
+  set(USE_SECTRANSP ON)
   list(APPEND CURL_LIBS "${COREFOUNDATION_FRAMEWORK}" "${SECURITY_FRAMEWORK}")
 endif()
 
@@ -399,7 +404,7 @@ if(CMAKE_USE_OPENSSL)
     set(HAVE_LIBCRYPTO ON)
     set(HAVE_LIBSSL ON)
     list(APPEND CURL_LIBS ${OPENSSL_LIBRARIES})
-    set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
+    set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIRS})
     set(CMAKE_REQUIRED_LIBRARIES ${OPENSSL_LIBRARIES})
     check_include_file("openssl/crypto.h" HAVE_OPENSSL_CRYPTO_H)
     check_include_file("openssl/engine.h" HAVE_OPENSSL_ENGINE_H)
@@ -606,6 +611,7 @@ if(CMAKE_USE_LIBSSH2)
     check_function_exists(libssh2_scp_send64        HAVE_LIBSSH2_SCP_SEND64)
     check_function_exists(libssh2_session_handshake HAVE_LIBSSH2_SESSION_HANDSHAKE)
     set(CMAKE_EXTRA_INCLUDE_FILES "")
+    unset(CMAKE_REQUIRED_LIBRARIES)
   endif()
 endif()
 
@@ -827,6 +833,7 @@ check_include_file_concat("stdint.h"        HAVE_STDINT_H)
 check_include_file_concat("sockio.h"        HAVE_SOCKIO_H)
 check_include_file_concat("sys/utsname.h"   HAVE_SYS_UTSNAME_H)
 
+
 check_type_size(size_t  SIZEOF_SIZE_T)
 check_type_size(ssize_t  SIZEOF_SSIZE_T)
 check_type_size("long long"  SIZEOF_LONG_LONG)
@@ -863,12 +870,8 @@ endif()
 
 check_symbol_exists(basename      "${CURL_INCLUDES}" HAVE_BASENAME)
 check_symbol_exists(socket        "${CURL_INCLUDES}" HAVE_SOCKET)
-# poll on macOS is unreliable, it first did not exist, then was broken until
-# fixed in 10.9 only to break again in 10.12.
-if(NOT APPLE)
-  check_symbol_exists(poll        "${CURL_INCLUDES}" HAVE_POLL)
-endif()
 check_symbol_exists(select        "${CURL_INCLUDES}" HAVE_SELECT)
+check_symbol_exists(poll          "${CURL_INCLUDES}" HAVE_POLL)
 check_symbol_exists(strdup        "${CURL_INCLUDES}" HAVE_STRDUP)
 check_symbol_exists(strstr        "${CURL_INCLUDES}" HAVE_STRSTR)
 check_symbol_exists(strtok_r      "${CURL_INCLUDES}" HAVE_STRTOK_R)
@@ -924,6 +927,9 @@ check_symbol_exists(freeifaddrs    "${CURL_INCLUDES}" HAVE_FREEIFADDRS)
 check_symbol_exists(pipe           "${CURL_INCLUDES}" HAVE_PIPE)
 check_symbol_exists(ftruncate      "${CURL_INCLUDES}" HAVE_FTRUNCATE)
 check_symbol_exists(getprotobyname "${CURL_INCLUDES}" HAVE_GETPROTOBYNAME)
+check_symbol_exists(getpeername    "${CURL_INCLUDES}" HAVE_GETPEERNAME)
+check_symbol_exists(getsockname    "${CURL_INCLUDES}" HAVE_GETSOCKNAME)
+check_symbol_exists(if_nametoindex "${CURL_INCLUDES}" HAVE_IF_NAMETOINDEX)
 check_symbol_exists(getrlimit      "${CURL_INCLUDES}" HAVE_GETRLIMIT)
 check_symbol_exists(setlocale      "${CURL_INCLUDES}" HAVE_SETLOCALE)
 check_symbol_exists(setmode        "${CURL_INCLUDES}" HAVE_SETMODE)
@@ -944,7 +950,7 @@ if(WIN32)
     add_definitions(-D_WIN32_WINNT=0x0501)
   endif()
 else()
-    check_function_exists(inet_pton HAVE_INET_PTON)
+  check_function_exists(inet_pton HAVE_INET_PTON)
 endif()
 
 check_symbol_exists(fsetxattr "${CURL_INCLUDES}" HAVE_FSETXATTR)
@@ -1234,10 +1240,7 @@ endfunction()
 
 # Clear list and try to detect available features
 set(_items)
-_add_if("WinSSL"        SSL_ENABLED AND USE_WINDOWS_SSPI)
-_add_if("OpenSSL"       SSL_ENABLED AND USE_OPENSSL)
-_add_if("DarwinSSL"     SSL_ENABLED AND USE_DARWINSSL)
-_add_if("mbedTLS"       SSL_ENABLED AND USE_MBEDTLS)
+_add_if("SSL"           SSL_ENABLED)
 _add_if("IPv6"          ENABLE_IPV6)
 _add_if("unix-sockets"  USE_UNIX_SOCKETS)
 _add_if("libz"          HAVE_LIBZ)
@@ -1255,7 +1258,7 @@ _add_if("Kerberos"      NOT CURL_DISABLE_CRYPTO_AUTH AND
                         (HAVE_GSSAPI OR USE_WINDOWS_SSPI))
 # NTLM support requires crypto function adaptions from various SSL libs
 # TODO alternative SSL libs tests for SSP1, GNUTLS, NSS
-if(NOT CURL_DISABLE_CRYPTO_AUTH AND (USE_OPENSSL OR USE_WINDOWS_SSPI OR USE_DARWINSSL OR USE_MBEDTLS))
+if(NOT CURL_DISABLE_CRYPTO_AUTH AND (USE_OPENSSL OR USE_WINDOWS_SSPI OR USE_SECTRANSP OR USE_MBEDTLS))
   _add_if("NTLM"        1)
   # TODO missing option (autoconf: --enable-ntlm-wb)
   _add_if("NTLM_WB"     NOT CURL_DISABLE_HTTP AND NTLM_WB_ENABLED)
@@ -1294,12 +1297,23 @@ _add_if("SCP"           USE_LIBSSH2)
 _add_if("SFTP"          USE_LIBSSH2)
 _add_if("RTSP"          NOT CURL_DISABLE_RTSP)
 _add_if("RTMP"          USE_LIBRTMP)
-list(SORT _items)
-string(REPLACE ";" " " SUPPORT_PROTOCOLS "${_items}")
-
-if(NOT SUPPRESS_VERBOSE_OUTPUT)
-message(STATUS "Enabled protocols: ${SUPPORT_PROTOCOLS}")
+if(_items)
+  list(SORT _items)
 endif()
+string(REPLACE ";" " " SUPPORT_PROTOCOLS "${_items}")
+message(STATUS "Enabled protocols: ${SUPPORT_PROTOCOLS}")
+
+# Clear list and collect SSL backends
+set(_items)
+_add_if("WinSSL"           SSL_ENABLED AND USE_WINDOWS_SSPI)
+_add_if("OpenSSL"          SSL_ENABLED AND USE_OPENSSL)
+_add_if("Secure Transport" SSL_ENABLED AND USE_SECTRANSP)
+_add_if("mbedTLS"          SSL_ENABLED AND USE_MBEDTLS)
+if(_items)
+  list(SORT _items)
+endif()
+string(REPLACE ";" " " SSL_BACKENDS "${_items}")
+message(STATUS "Enabled SSL backends: ${SSL_BACKENDS}")
 
 # curl-config needs the following options to be set.
 set(CC                      "${CMAKE_C_COMPILER}")
@@ -1308,7 +1322,7 @@ set(CONFIGURE_OPTIONS       "")
 # TODO when to set "-DCURL_STATICLIB" for CPPFLAG_CURL_STATICLIB?
 set(CPPFLAG_CURL_STATICLIB  "")
 set(CURLVERSION             "${CURL_VERSION}")
-if(BUILD_SHARED_LIBS OR OSX_FRAMEWORK)
+if(BUILD_SHARED_LIBS)
   set(ENABLE_SHARED         "yes")
   set(ENABLE_STATIC         "no")
 else()
@@ -1352,11 +1366,6 @@ configure_file("${CURL_SOURCE_DIR}/libcurl.pc.in"
                "${CURL_BINARY_DIR}/libcurl.pc" @ONLY)
 install(FILES "${CURL_BINARY_DIR}/libcurl.pc"
     DESTINATION ${INSTALL_LIB_DIR}/pkgconfig)
-endif()
-
-# This needs to be run very last so other parts of the scripts can take advantage of this.
-if(NOT CURL_CONFIG_HAS_BEEN_RUN_BEFORE)
-  set(CURL_CONFIG_HAS_BEEN_RUN_BEFORE 1 CACHE INTERNAL "Flag to track whether this is the first time running CMake or if CMake has been configured before")
 endif()
 
 # install headers

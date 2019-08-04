@@ -163,7 +163,7 @@ function(find_extproject name)
         # The CMake folder in root folder is prefered
         string(TOUPPER ${name} UPPER_NAME)
         if(CMAKE_CROSSCOMPILING)
-            set(${UPPER_NAME}_DIR ${EXT_INSTALL_DIR}/${BINARY_NAME}/share/${name}/CMake)
+            set(${name}_DIR ${EXT_INSTALL_DIR}/${BINARY_NAME}/share/${name}/CMake)
         elseif(OSX_FRAMEWORK AND NOT EXISTS ${EXT_INSTALL_DIR}/${BINARY_NAME}/CMake AND EXISTS ${EXT_INSTALL_DIR}/${BINARY_NAME}/Library/Frameworks)
             set(CMAKE_PREFIX_PATH ${EXT_INSTALL_DIR}/${BINARY_NAME}/Library/Frameworks)
         else()
