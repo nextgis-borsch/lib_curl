@@ -3,7 +3,7 @@
 # Purpose:  CMake build scripts
 # Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nexgis.com
 ################################################################################
-# Copyright (C) 2015-2018, NextGIS <info@nextgis.com>
+# Copyright (C) 2015-2019, NextGIS <info@nextgis.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -66,17 +66,61 @@ function(report_version name ver)
 
 endfunction()
 
-function( get_cpack_filename ver name )
-    get_compiler_version(COMPILER)
+# macro to find packages on the host OS
+macro( find_exthost_package )
+    if(CMAKE_CROSSCOMPILING)
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
 
-    if(BUILD_STATIC_LIBS)
-        set(STATIC_PREFIX "static-")
+        find_package( ${ARGN} )
+
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
+    else()
+        find_package( ${ARGN} )
     endif()
+endmacro()
 
-    set(${name} ${PACKAGE_NAME}-${STATIC_PREFIX}${ver}-${COMPILER} PARENT_SCOPE)
+# macro to find programs on the host OS
+macro( find_exthost_program )
+    if(CMAKE_CROSSCOMPILING)
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
+
+        find_program( ${ARGN} )
+
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
+    else()
+        find_program( ${ARGN} )
+    endif()
+endmacro()
+
+function(get_prefix prefix)
+  if(BUILD_STATIC_LIBS)
+  set(STATIC_PREFIX "static-")
+    if(ANDROID)
+      set(STATIC_PREFIX "${STATIC_PREFIX}android-${ANDROID_ABI}-")
+    elseif(IOS)
+      set(STATIC_PREFIX "${STATIC_PREFIX}${IOS_PLATFORM}${IOS_ARCH}-${ANDROID_ABI}-")
+    endif()
+  endif()
+  set(${prefix} ${STATIC_PREFIX} PARENT_SCOPE)
 endfunction()
 
-function( get_compiler_version ver )
+
+function(get_cpack_filename ver name)
+    get_compiler_version(COMPILER)
+    get_prefix(STATIC_PREFIX)
+
+    set(${name} ${PACKAGE_NAME}-${ver}-${STATIC_PREFIX}${COMPILER} PARENT_SCOPE)
+endfunction()
+
+function(get_compiler_version ver)
     ## Limit compiler version to 2 or 1 digits
     string(REPLACE "." ";" VERSION_LIST ${CMAKE_C_COMPILER_VERSION})
     list(LENGTH VERSION_LIST VERSION_LIST_LEN)
@@ -96,38 +140,3 @@ function( get_compiler_version ver )
 
     set(${ver} ${COMPILER} PARENT_SCOPE)
 endfunction()
-
-# macro to find packages on the host OS
-macro( find_exthost_package )
-    if(CMAKE_CROSSCOMPILING)
-        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
-        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
-        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
-
-        find_package( ${ARGN} )
-
-        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
-        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
-        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
-    else()
-        find_package( ${ARGN} )
-    endif()
-endmacro()
-
-
-# macro to find programs on the host OS
-macro( find_exthost_program )
-    if(CMAKE_CROSSCOMPILING)
-        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
-        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
-        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
-
-        find_program( ${ARGN} )
-
-        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
-        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
-        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
-    else()
-        find_program( ${ARGN} )
-    endif()
-endmacro()
