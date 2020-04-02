@@ -46,6 +46,7 @@ man_MANS = \
  curl_multi_info_read.3 \
  curl_multi_init.3 \
  curl_multi_perform.3 \
+ curl_multi_poll.3 \
  curl_multi_remove_handle.3 \
  curl_multi_setopt.3 \
  curl_multi_socket.3 \
@@ -53,6 +54,7 @@ man_MANS = \
  curl_multi_socket_all.3 \
  curl_multi_strerror.3 \
  curl_multi_timeout.3 \
+ curl_multi_wakeup.3 \
  curl_multi_wait.3 \
  curl_share_cleanup.3 \
  curl_share_init.3 \

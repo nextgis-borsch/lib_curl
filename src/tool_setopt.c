@@ -82,6 +82,7 @@ const NameValue setopt_nv_CURL_HTTP_VERSION[] = {
   NV(CURL_HTTP_VERSION_1_1),
   NV(CURL_HTTP_VERSION_2_0),
   NV(CURL_HTTP_VERSION_2TLS),
+  NV(CURL_HTTP_VERSION_3),
   NVEND,
 };
 
@@ -123,6 +124,7 @@ const NameValue setopt_nv_CURLUSESSL[] = {
 const NameValueUnsigned setopt_nv_CURLSSLOPT[] = {
   NV(CURLSSLOPT_ALLOW_BEAST),
   NV(CURLSSLOPT_NO_REVOKE),
+  NV(CURLSSLOPT_NO_PARTIALCHAIN),
   NVEND,
 };
 
@@ -180,18 +182,18 @@ static const NameValue setopt_nv_CURLNONZERODEFAULTS[] = {
   ret = easysrc_add args; \
   if(ret) \
     goto nomem; \
-} WHILE_FALSE
+} while(0)
 #define ADDF(args) do { \
   ret = easysrc_addf args; \
   if(ret) \
     goto nomem; \
-} WHILE_FALSE
+} while(0)
 #define NULL_CHECK(p) do { \
   if(!p) { \
     ret = CURLE_OUT_OF_MEMORY; \
     goto nomem; \
   } \
-} WHILE_FALSE
+} while(0)
 
 #define DECL0(s) ADD((&easysrc_decl, s))
 #define DECL1(f,a) ADDF((&easysrc_decl, f,a))
@@ -818,6 +820,16 @@ bool tool_setopt_skip(CURLoption tag)
   switch(tag) {
   case CURLOPT_TFTP_BLKSIZE:
   case CURLOPT_TFTP_NO_OPTIONS:
+    return TRUE;
+  default:
+    break;
+  }
+#endif
+#ifdef CURL_DISABLE_NETRC
+#define USED_TAG
+  switch(tag) {
+  case CURLOPT_NETRC:
+  case CURLOPT_NETRC_FILE:
     return TRUE;
   default:
     break;

@@ -9,6 +9,8 @@ include/curl,include/curl,,h
 lib,lib,,"c,h,inc,cmake,h,cmake,rc"
 lib/vauth,lib/vauth,,"c,h"
 lib/vtls,lib/vtls,,"c,h"
+lib/vquic,lib/vquic,,"c,h"
+lib/vssh,lib/vssh,,"c,h"
 m4,,skip,
 packages,,skip,
 projects,,skip,
