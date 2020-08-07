@@ -22,6 +22,20 @@
 1307
 # Pipelining is deprecated
 530
+584
+1900
+1901
+1902
+2033
+# Uses SRP to "a server not supporting it" but modern stunnel versions
+# will silently accept it and remain happy
+323
+971
+1165
+1167
+1307
+# Pipelining is deprecated
+530
 536
 584
 1900
