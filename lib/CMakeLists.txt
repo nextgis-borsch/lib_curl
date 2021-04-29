@@ -136,8 +136,6 @@ endif()
 
 # Add path to includes to build-tree export
 target_include_directories(${EXPORT_TARGETS} PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 )
 
