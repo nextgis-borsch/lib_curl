@@ -13,6 +13,7 @@ lib/vquic,lib/vquic,,"c,h"
 lib/vssh,lib/vssh,,"c,h"
 m4,,skip,
 packages,,skip,
+plan9,,skip,
 projects,,skip,
 scripts,,skip,
 src,src,,"c,h,inc,pl,rc"
