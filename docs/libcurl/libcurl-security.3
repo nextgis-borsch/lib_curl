@@ -5,11 +5,11 @@
 .\" *                            | (__| |_| |  _ <| |___
 .\" *                             \___|\___/|_| \_\_____|
 .\" *
-.\" * Copyright (C) 1998 - 2020, Daniel Stenberg, <daniel@haxx.se>, et al.
+.\" * Copyright (C) 1998 - 2021, Daniel Stenberg, <daniel@haxx.se>, et al.
 .\" *
 .\" * This software is licensed as described in the file COPYING, which
 .\" * you should have received as part of this distribution. The terms
-.\" * are also available at https://curl.haxx.se/docs/copyright.html.
+.\" * are also available at https://curl.se/docs/copyright.html.
 .\" *
 .\" * You may opt to use, copy, modify, merge, publish, distribute and/or sell
 .\" * copies of the Software, and permit persons to whom the Software is
@@ -20,7 +20,7 @@
 .\" *
 .\" **************************************************************************
 .\"
-.TH libcurl-security 3 "March 09, 2020" "libcurl 7.71.1" "libcurl security"
+.TH libcurl-security 3 "April 26, 2021" "libcurl 7.77.0" "libcurl security"
 
 .SH NAME
 libcurl-security \- security considerations when using libcurl
@@ -155,7 +155,7 @@ behind a firewall.  Applications can mitigate against this by using the
 \fICURLOPT_FTP_SKIP_PASV_IP(3)\fP option or \fICURLOPT_FTPPORT(3)\fP.
 
 Local servers sometimes assume local access comes from friends and trusted
-users. An application that expects http://example.com/file_to_read that and
+users. An application that expects https://example.com/file_to_read that and
 instead gets http://192.168.0.1/my_router_config might print a file that would
 otherwise be protected by the firewall.
 
@@ -163,6 +163,12 @@ Allowing your application to connect to local hosts, be it the same machine
 that runs the application or a machine on the same local network, might be
 possible to exploit by an attacker who then perhaps can "port-scan" the
 particular hosts - depending on how the application and servers acts.
+.SH "IPv4 Addresses"
+Some users might be tempted to filter access to local resources or similar
+based on numerical IPv4 addresses used in URLs. This is a bad and error-prone
+idea because of the many different ways a numerical IPv4 address can be
+specified and libcurl accepts: one to four dot-separated fields using one of
+or a mix of decimal, octal or hexadecimal encoding.
 .SH "IPv6 Addresses"
 libcurl will normally handle IPv6 addresses transparently and just as easily
 as IPv4 addresses. That means that a sanitizing function that filters out
@@ -349,7 +355,7 @@ plain HTTP connection.
 .SH "Report Security Problems"
 Should you detect or just suspect a security problem in libcurl or curl,
 contact the project curl security team immediately. See
-https://curl.haxx.se/dev/secprocess.html for details.
+https://curl.se/dev/secprocess.html for details.
 .SH "Showing What You Do"
 Relatedly, be aware that in situations when you have problems with libcurl and
 ask someone for help, everything you reveal in order to get best possible help
@@ -366,3 +372,15 @@ sensitive data.
 To avoid this problem, you must of course use your common sense. Often, you
 can just edit out the sensitive data or just search/replace your true
 information with faked data.
+.SH "Setuid applications using libcurl"
+libcurl-using applications that set the 'setuid' bit to run with elevated or
+modified rights also implicitly give that extra power to libcurl and this
+should only be done after very careful considerations.
+
+Giving setuid powers to the appliction means that libcurl can save files using
+those new rights (if for example the `SSLKEYLOGFILE` environment variable is
+set). Also: if the application wants these powers to read or manage secrets
+that the user is otherwise not able to view (like credentials for a login
+etc), it should be noted that libcurl still might understand proxy environment
+variables that allow the user to redirect libcurl operations to use a proxy
+controlled by the user.

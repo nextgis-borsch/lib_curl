@@ -5,11 +5,11 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2020, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2021, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at https://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -668,7 +668,7 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
 
   /* allocate internal array for the internal data */
   data = calloc(nfds, sizeof(struct select_ws_data));
-  if(data == NULL) {
+  if(!data) {
     CloseHandle(abort);
     CloseHandle(mutex);
     errno = ENOMEM;
@@ -677,7 +677,7 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
 
   /* allocate internal array for the internal event handles */
   handles = calloc(nfds + 1, sizeof(HANDLE));
-  if(handles == NULL) {
+  if(!handles) {
     CloseHandle(abort);
     CloseHandle(mutex);
     free(data);
@@ -705,7 +705,7 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
 
     if(FD_ISSET(wsasock, writefds)) {
       FD_SET(wsasock, &writesock);
-      wsaevents.lNetworkEvents |= FD_WRITE|FD_CONNECT;
+      wsaevents.lNetworkEvents |= FD_WRITE|FD_CONNECT|FD_CLOSE;
     }
 
     if(FD_ISSET(wsasock, exceptfds)) {
@@ -725,6 +725,7 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
             handles[nfd] = signal;
             data[nth].signal = signal;
             data[nth].thread = handle;
+            nfd++;
             nth++;
           }
           else {
@@ -734,13 +735,18 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
       }
       else if(fd == fileno(stdout)) {
         handles[nfd] = GetStdHandle(STD_OUTPUT_HANDLE);
+        nfd++;
       }
       else if(fd == fileno(stderr)) {
         handles[nfd] = GetStdHandle(STD_ERROR_HANDLE);
+        nfd++;
       }
       else {
         wsaevent = WSACreateEvent();
         if(wsaevent != WSA_INVALID_EVENT) {
+          if(wsaevents.lNetworkEvents & FD_WRITE) {
+            send(wsasock, NULL, 0, 0); /* reset FD_WRITE */
+          }
           error = WSAEventSelect(wsasock, wsaevent, wsaevents.lNetworkEvents);
           if(error != SOCKET_ERROR) {
             handles[nfd] = (HANDLE)wsaevent;
@@ -760,6 +766,7 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
               if(FD_ISSET(wsasock, &exceptsock))
                 data[nfd].wsastate |= FD_OOB;
             }
+            nfd++;
             nws++;
           }
           else {
@@ -772,6 +779,7 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
                 handles[nfd] = signal;
                 data[nth].signal = signal;
                 data[nth].thread = handle;
+                nfd++;
                 nth++;
               }
               else {
@@ -781,7 +789,6 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
           }
         }
       }
-      nfd++;
     }
   }
 
@@ -835,11 +842,11 @@ static int select_ws(int nfds, fd_set *readfds, fd_set *writefds,
             FD_CLR(wsasock, readfds);
 
           /* remove from descriptor set if not ready for write/connect */
-          if(!(wsaevents.lNetworkEvents & (FD_WRITE|FD_CONNECT)))
+          if(!(wsaevents.lNetworkEvents & (FD_WRITE|FD_CONNECT|FD_CLOSE)))
             FD_CLR(wsasock, writefds);
 
           /* remove from descriptor set if not exceptional */
-          if(!(wsaevents.lNetworkEvents & (FD_OOB)))
+          if(!(wsaevents.lNetworkEvents & FD_OOB))
             FD_CLR(wsasock, exceptfds);
         }
       }
