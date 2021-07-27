@@ -1,0 +1,1 @@
+Read-only test file to support curl test suite
