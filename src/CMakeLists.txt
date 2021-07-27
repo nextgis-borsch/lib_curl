@@ -49,6 +49,17 @@ add_executable(
   ${CURL_FILES}
   )
 
+if(CURL_HAS_LTO)
+  set_target_properties(${EXE_NAME} PROPERTIES
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+    INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+endif()
+
+if(ENABLE_UNICODE AND MINGW)
+  target_link_libraries(${EXE_NAME} -municode)
+  # GCC doesn't know about wmain
+  set_source_files_properties(tool_main.c PROPERTIES COMPILE_FLAGS "-Wno-missing-prototypes -Wno-missing-declarations")
+endif()
 
 if(OSX_FRAMEWORK)
     set_target_properties(${EXE_NAME} PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
