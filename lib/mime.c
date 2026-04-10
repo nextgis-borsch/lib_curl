@@ -162,19 +162,20 @@ static curl_off_t VmsSpecialSize(const char *name,
 static FILE *vmsfopenread(const char *file, const char *mode)
 {
   curlx_struct_stat statbuf;
-  int result;
+  int res = curlx_stat(file, &statbuf);
 
-  result = curlx_stat(file, &statbuf);
-
-  switch(statbuf.st_fab_rfm) {
-  case FAB$C_VAR:
-  case FAB$C_VFC:
-  case FAB$C_STMCR:
-    return curlx_fopen(file, FOPEN_READTEXT); /* VMS */
-    break;
-  default:
-    return curlx_fopen(file, FOPEN_READTEXT, "rfm=stmlf", "ctx=stm");
+  if(res != -1) {
+    switch(statbuf.st_fab_rfm) {
+    case FAB$C_VAR:
+    case FAB$C_VFC:
+    case FAB$C_STMCR:
+      return curlx_fopen(file, FOPEN_READTEXT); /* VMS */
+      break;
+    default:
+      return curlx_fopen(file, FOPEN_READTEXT, "rfm=stmlf", "ctx=stm");
+    }
   }
+  return NULL;
 }
 
 #define fopen_read vmsfopenread
@@ -599,7 +600,7 @@ static int mime_mem_seek(void *instream, curl_off_t offset, int whence)
 
 static void mime_mem_free(void *ptr)
 {
-  Curl_safefree(((curl_mimepart *)ptr)->data);
+  curlx_safefree(((curl_mimepart *)ptr)->data);
 }
 
 /* Named file callbacks. */
@@ -650,7 +651,7 @@ static void mime_file_free(void *ptr)
     curlx_fclose(part->fp);
     part->fp = NULL;
   }
-  Curl_safefree(part->data);
+  curlx_safefree(part->data);
 }
 
 /* Subparts callbacks. */
@@ -1001,7 +1002,7 @@ static int mime_subparts_seek(void *instream, curl_off_t offset, int whence)
 {
   curl_mime *mime = (curl_mime *)instream;
   curl_mimepart *part;
-  int result = CURL_SEEKFUNC_OK;
+  int rc = CURL_SEEKFUNC_OK;
 
   if(whence != SEEK_SET || offset)
     return CURL_SEEKFUNC_CANTSEEK;    /* Only support full rewind. */
@@ -1012,13 +1013,13 @@ static int mime_subparts_seek(void *instream, curl_off_t offset, int whence)
   for(part = mime->firstpart; part; part = part->nextpart) {
     int res = mime_part_rewind(part);
     if(res != CURL_SEEKFUNC_OK)
-      result = res;
+      rc = res;
   }
 
-  if(result == CURL_SEEKFUNC_OK)
+  if(rc == CURL_SEEKFUNC_OK)
     mimesetstate(&mime->state, MIMESTATE_BEGIN, NULL);
 
-  return result;
+  return rc;
 }
 
 /* Release part content. */
@@ -1071,9 +1072,9 @@ void Curl_mime_cleanpart(curl_mimepart *part)
     curl_slist_free_all(part->curlheaders);
     if(part->flags & MIME_USERHEADERS_OWNER)
       curl_slist_free_all(part->userheaders);
-    Curl_safefree(part->mimetype);
-    Curl_safefree(part->name);
-    Curl_safefree(part->filename);
+    curlx_safefree(part->mimetype);
+    curlx_safefree(part->name);
+    curlx_safefree(part->filename);
     Curl_mime_initpart(part);
   }
 }
@@ -1241,7 +1242,7 @@ CURLcode curl_mime_name(curl_mimepart *part, const char *name)
   if(!part)
     return CURLE_BAD_FUNCTION_ARGUMENT;
 
-  Curl_safefree(part->name);
+  curlx_safefree(part->name);
 
   if(name) {
     part->name = curlx_strdup(name);
@@ -1258,7 +1259,7 @@ CURLcode curl_mime_filename(curl_mimepart *part, const char *filename)
   if(!part)
     return CURLE_BAD_FUNCTION_ARGUMENT;
 
-  Curl_safefree(part->filename);
+  curlx_safefree(part->filename);
 
   if(filename) {
     part->filename = curlx_strdup(filename);
@@ -1350,7 +1351,7 @@ CURLcode curl_mime_type(curl_mimepart *part, const char *mimetype)
   if(!part)
     return CURLE_BAD_FUNCTION_ARGUMENT;
 
-  Curl_safefree(part->mimetype);
+  curlx_safefree(part->mimetype);
 
   if(mimetype) {
     part->mimetype = curlx_strdup(mimetype);
@@ -1759,8 +1760,8 @@ CURLcode Curl_mime_prepare_headers(struct Curl_easy *data,
                                    filename ? "; filename=\"" : "",
                                    filename ? filename : "",
                                    filename ? "\"" : "");
-      Curl_safefree(name);
-      Curl_safefree(filename);
+      curlx_safefree(name);
+      curlx_safefree(filename);
       if(ret)
         return ret;
     }

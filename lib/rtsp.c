@@ -126,19 +126,13 @@ static CURLcode rtsp_setup_connection(struct Curl_easy *data,
 /*
  * Function to check on various aspects of a connection.
  */
-static uint32_t rtsp_conncheck(struct Curl_easy *data,
-                               struct connectdata *conn,
-                               uint32_t checks_to_perform)
+static bool rtsp_conn_is_dead(struct Curl_easy *data,
+                              struct connectdata *conn)
 {
-  unsigned int ret_val = CONNRESULT_NONE;
-
-  if(checks_to_perform & CONNCHECK_ISDEAD) {
-    bool input_pending;
-    if(!Curl_conn_is_alive(data, conn, &input_pending))
-      ret_val |= CONNRESULT_DEAD;
-  }
-
-  return ret_val;
+  bool input_pending;
+  /* Contrary to default handling, this protocol allows pending
+   * input on an unused connection. */
+  return !Curl_conn_is_alive(data, conn, &input_pending);
 }
 
 static CURLcode rtsp_connect(struct Curl_easy *data, bool *done)
@@ -439,13 +433,13 @@ static CURLcode rtsp_do(struct Curl_easy *data, bool *done)
     }
   }
 
-  /* The User-Agent string might have been allocated in url.c already, because
+  /* The User-Agent string might have been allocated already, because
      it might have been used in the proxy connect, but if we have got a header
      with the user-agent string specified, we erase the previously made string
      here. */
   if(Curl_checkheaders(data, STRCONST("User-Agent")) &&
      data->state.aptr.uagent) {
-    Curl_safefree(data->state.aptr.uagent);
+    curlx_safefree(data->state.aptr.uagent);
   }
   else if(!Curl_checkheaders(data, STRCONST("User-Agent")) &&
           data->set.str[STRING_USERAGENT]) {
@@ -464,7 +458,7 @@ static CURLcode rtsp_do(struct Curl_easy *data, bool *done)
   p_userpwd = data->state.aptr.userpwd;
 
   /* Referrer */
-  Curl_safefree(data->state.aptr.ref);
+  curlx_safefree(data->state.aptr.ref);
   if(Curl_bufref_ptr(&data->state.referer) &&
      !Curl_checkheaders(data, STRCONST("Referer")))
     data->state.aptr.ref =
@@ -548,7 +542,7 @@ static CURLcode rtsp_do(struct Curl_easy *data, bool *done)
    * Free userpwd now --- cannot reuse this for Negotiate and possibly NTLM
    * with basic and digest, it will be freed anyway by the next request
    */
-  Curl_safefree(data->state.aptr.userpwd);
+  curlx_safefree(data->state.aptr.userpwd);
 
   if(result)
     goto out;
@@ -1017,7 +1011,7 @@ CURLcode Curl_rtsp_parseheader(struct Curl_easy *data, const char *header)
      *
      * Allow any non whitespace content, up to the field separator or end of
      * line. RFC 2326 is not 100% clear on the session ID and for example
-     * gstreamer does url-encoded session ID's not covered by the standard.
+     * gstreamer does URL-encoded session ID's not covered by the standard.
      */
     end = start;
     while((*end > ' ') && (*end != ';'))
@@ -1057,7 +1051,7 @@ CURLcode Curl_rtsp_parseheader(struct Curl_easy *data, const char *header)
 /*
  * RTSP handler interface.
  */
-static const struct Curl_protocol Curl_protocol_rtsp = {
+const struct Curl_protocol Curl_protocol_rtsp = {
   rtsp_setup_connection,                /* setup_connection */
   rtsp_do,                              /* do_it */
   rtsp_done,                            /* done */
@@ -1072,25 +1066,9 @@ static const struct Curl_protocol Curl_protocol_rtsp = {
   ZERO_NULL,                            /* disconnect */
   rtsp_rtp_write_resp,                  /* write_resp */
   rtsp_rtp_write_resp_hd,               /* write_resp_hd */
-  rtsp_conncheck,                       /* connection_check */
+  rtsp_conn_is_dead,                    /* connection_is_dead */
   ZERO_NULL,                            /* attach connection */
   Curl_http_follow,                     /* follow */
 };
 
 #endif /* CURL_DISABLE_RTSP */
-
-/*
- * RTSP handler interface.
- */
-const struct Curl_scheme Curl_scheme_rtsp = {
-  "rtsp",                               /* scheme */
-#ifdef CURL_DISABLE_RTSP
-  ZERO_NULL,
-#else
-  &Curl_protocol_rtsp,
-#endif
-  CURLPROTO_RTSP,                       /* protocol */
-  CURLPROTO_RTSP,                       /* family */
-  PROTOPT_CONN_REUSE,                   /* flags */
-  PORT_RTSP,                            /* defport */
-};

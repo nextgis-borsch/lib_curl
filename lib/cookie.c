@@ -347,7 +347,7 @@ static bool bad_domain(const char *domain, size_t len)
 
   cookie-octet    = %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E
 
-  But Firefox and Chrome as of June 2022 accept space, comma and double-quotes
+  Yet, Firefox and Chrome as of June 2022 accept space, comma and double-quotes
   fine. The prime reason for filtering out control bytes is that some HTTP
   servers return 400 for requests that contain such.
 */
@@ -461,6 +461,13 @@ parse_cookie_header(struct Curl_easy *data,
         sep = TRUE; /* a '=' was used */
         if(!curlx_str_cspn(&ptr, &val, ";\r\n"))
           curlx_str_trimblanks(&val);
+
+        /* Reject cookies with a TAB inside the value */
+        if(curlx_strlen(&val) &&
+           memchr(curlx_str(&val), '\t', curlx_strlen(&val))) {
+          infof(data, "cookie contains TAB, dropping");
+          return CURLE_OK;
+        }
       }
       else
         curlx_str_init(&val);
@@ -486,13 +493,6 @@ parse_cookie_header(struct Curl_easy *data,
            ((curlx_strlen(&name) + curlx_strlen(&val)) > MAX_NAME)) {
           infof(data, "oversized cookie dropped, name/val %zu + %zu bytes",
                 curlx_strlen(&name), curlx_strlen(&val));
-          return CURLE_OK;
-        }
-
-        /* Reject cookies with a TAB inside the value */
-        if(curlx_strlen(&val) &&
-           memchr(curlx_str(&val), '\t', curlx_strlen(&val))) {
-          infof(data, "cookie contains TAB, dropping");
           return CURLE_OK;
         }
 
@@ -1106,8 +1106,17 @@ static CURLcode cookie_load(struct Curl_easy *data, const char *file,
       fp = curlx_fopen(file, "rb");
       if(!fp)
         infof(data, "WARNING: failed to open cookie file \"%s\"", file);
-      else
-        handle = fp;
+      else {
+        curlx_struct_stat stat;
+        if((curlx_fstat(fileno(fp), &stat) != -1) && S_ISDIR(stat.st_mode)) {
+          curlx_fclose(fp);
+          fp = NULL;
+          infof(data, "WARNING: cookie filename points to a directory: \"%s\"",
+                file);
+        }
+        else
+          handle = fp;
+      }
     }
   }
 

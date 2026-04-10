@@ -1009,6 +1009,8 @@ static CURLcode cr_lc_read(struct Curl_easy *data,
 
     if(!nread || !memchr(buf, '\n', nread)) {
       /* nothing to convert, return this right away */
+      if(nread)
+        ctx->prev_cr = (buf[nread - 1] == '\r');
       if(ctx->read_eos)
         ctx->eos = TRUE;
       *pnread = nread;
@@ -1128,7 +1130,7 @@ CURLcode Curl_creader_set_fread(struct Curl_easy *data, curl_off_t len)
   struct cr_in_ctx *ctx;
 
   result = Curl_creader_create(&r, data, &cr_in, CURL_CR_CLIENT);
-  if(result)
+  if(result || !r)
     goto out;
   ctx = r->ctx;
   ctx->total_len = len;

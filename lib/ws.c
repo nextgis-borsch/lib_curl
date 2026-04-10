@@ -1399,7 +1399,7 @@ CURLcode Curl_ws_accept(struct Curl_easy *data,
     if(result)
       goto out;
     DEBUGASSERT(nread == nwritten);
-    k->keepon &= ~KEEP_RECV; /* read no more content */
+    CURL_REQ_CLEAR_RECV(data); /* read no more content */
   }
   else { /* !connect_only */
     if(data->set.method == HTTPREQ_PUT) {
@@ -1423,10 +1423,10 @@ CURLcode Curl_ws_accept(struct Curl_easy *data,
       /* start over with sending */
       data->req.eos_read = FALSE;
       data->req.upload_done = FALSE;
-      k->keepon |= KEEP_SEND;
+      CURL_REQ_SET_SEND(data);
     }
 
-    /* And pass any additional data to the writers */
+    /* Then pass any additional data to the writers */
     if(nread) {
       result = Curl_client_write(data, CLIENTWRITE_BODY, mem, nread);
       if(result)
@@ -1689,6 +1689,9 @@ static CURLcode ws_send_raw_blocking(struct Curl_easy *data,
   CURLcode result = CURLE_OK;
   size_t nwritten;
 
+  if(!data)
+    return result;
+
   (void)ws;
   while(buflen) {
     result = Curl_xfer_send(data, buffer, buflen, FALSE, &nwritten);
@@ -1915,7 +1918,7 @@ out:
   return result;
 }
 
-static const struct Curl_protocol Curl_protocol_ws = {
+const struct Curl_protocol Curl_protocol_ws = {
   ws_setup_conn,                        /* setup_connection */
   Curl_http,                            /* do_it */
   Curl_http_done,                       /* done */
@@ -1930,7 +1933,7 @@ static const struct Curl_protocol Curl_protocol_ws = {
   ZERO_NULL,                            /* disconnect */
   Curl_http_write_resp,                 /* write_resp */
   Curl_http_write_resp_hd,              /* write_resp_hd */
-  ZERO_NULL,                            /* connection_check */
+  ZERO_NULL,                            /* connection_is_dead */
   ZERO_NULL,                            /* attach connection */
   Curl_http_follow,                     /* follow */
 };
@@ -1980,32 +1983,3 @@ CURL_EXTERN CURLcode curl_ws_start_frame(CURL *curl,
 }
 
 #endif /* !CURL_DISABLE_WEBSOCKETS */
-
-const struct Curl_scheme Curl_scheme_ws = {
-  "WS",                                 /* scheme */
-#ifdef CURL_DISABLE_WEBSOCKETS
-  ZERO_NULL,
-#else
-  &Curl_protocol_ws,
-#endif
-  CURLPROTO_WS,                         /* protocol */
-  CURLPROTO_HTTP,                       /* family */
-  PROTOPT_CREDSPERREQUEST |             /* flags */
-  PROTOPT_USERPWDCTRL,
-  PORT_HTTP                             /* defport */
-}
-;
-
-const struct Curl_scheme Curl_scheme_wss = {
-  "WSS",                                /* scheme */
-#if defined(CURL_DISABLE_WEBSOCKETS) || !defined(USE_SSL)
-  ZERO_NULL,
-#else
-  &Curl_protocol_ws,
-#endif
-  CURLPROTO_WSS,                        /* protocol */
-  CURLPROTO_HTTP,                       /* family */
-  PROTOPT_SSL | PROTOPT_CREDSPERREQUEST | /* flags */
-  PROTOPT_USERPWDCTRL,
-  PORT_HTTPS                            /* defport */
-};

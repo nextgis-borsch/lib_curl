@@ -96,6 +96,7 @@ my $listenaddr = '127.0.0.1'; # default address on which to listen
 my $ipvnum = 4;               # default IP version of listener address
 my $idnum = 1;                # default ssh daemon instance number
 my $proto = 'ssh';            # protocol the ssh daemon speaks
+my $keyalgo = 'rsa';          # key algorithm
 my $path = getcwd();          # current working directory
 my $logdir = $path .'/log';   # directory for log files
 my $piddir;                   # directory for server config files
@@ -188,6 +189,12 @@ while(@ARGV) {
                 $port = $1;
                 shift @ARGV;
             }
+        }
+    }
+    elsif($ARGV[0] eq '--keyalgo') {
+        if($ARGV[1]) {
+            $keyalgo = $ARGV[1];
+            shift @ARGV;
         }
     }
     else {
@@ -373,6 +380,7 @@ if((($sshid =~ /OpenSSH/) && ($sshvernum < 299)) ||
 #  -N:  new passphrase   : OpenSSH 1.2.1 and later
 #  -q:  quiet keygen     : OpenSSH 1.2.1 and later
 #  -t:  key type         : OpenSSH 2.5.0 and later
+#  -m:  key format       : OpenSSH 5.6.0 and later
 #
 #  -C:  identity comment : SunSSH 1.0.0 and later
 #  -f:  key filename     : SunSSH 1.0.0 and later
@@ -397,27 +405,24 @@ if((! -e pp($hstprvkeyf)) || (! -s pp($hstprvkeyf)) ||
     unlink(pp($hstprvkeyf), pp($hstpubkeyf), pp($hstpubmd5f),
            pp($hstpubsha256f), pp($cliprvkeyf), pp($clipubkeyf));
 
-    my $sshkeygenopt = '';
+    my @sshkeygenopt;
     if(($sshid =~ /OpenSSH/) && ($sshvernum >= 560)) {
         # Override the default key format. Necessary to force legacy PEM format
         # for libssh2 crypto backends that do not understand the OpenSSH (RFC4716)
         # format, e.g. WinCNG.
         # Accepted values: RFC4716, PKCS8, PEM (see also 'man ssh-keygen')
-        if($ENV{'CURL_TEST_SSH_KEY_FORMAT'}) {
-            $sshkeygenopt .= ' -m ' . $ENV{'CURL_TEST_SSH_KEY_FORMAT'};
-        }
-        else {
-            $sshkeygenopt .= ' -m PEM';  # Use the most compatible RSA format for tests.
-        }
+        push @sshkeygenopt, '-m';
+        # Default to the most compatible format for tests.
+        push @sshkeygenopt, $ENV{'CURL_TEST_SSH_KEY_FORMAT'} ? $ENV{'CURL_TEST_SSH_KEY_FORMAT'} : 'PEM';
     }
     logmsg "generating host keys...\n" if($verbose);
-    if(system "\"$sshkeygen\" -q -t rsa -f " . pp($hstprvkeyf) . " -C 'curl test server' -N ''" . $sshkeygenopt) {
+    if(system($sshkeygen, ('-q', '-t', $keyalgo, '-f', pp($hstprvkeyf), '-C', 'curl test server', '-N', '', @sshkeygenopt))) {
         logmsg "Could not generate host key\n";
         exit 1;
     }
     display_file_top(pp($hstprvkeyf)) if($verbose);
     logmsg "generating client keys...\n" if($verbose);
-    if(system "\"$sshkeygen\" -q -t rsa -f " . pp($cliprvkeyf) . " -C 'curl test client' -N ''" . $sshkeygenopt) {
+    if(system($sshkeygen, ('-q', '-t', $keyalgo, '-f', pp($cliprvkeyf), '-C', 'curl test client', '-N', '', @sshkeygenopt))) {
         logmsg "Could not generate client key\n";
         exit 1;
     }
@@ -427,14 +432,14 @@ if((! -e pp($hstprvkeyf)) || (! -s pp($hstprvkeyf)) ||
     chmod 0600, pp($cliprvkeyf);
     if(($^O eq 'cygwin' || $^O eq 'msys') && -e "/bin/setfacl") {
         # https://cygwin.com/cygwin-ug-net/setfacl.html
-        system "/bin/setfacl --remove-all " . pp($hstprvkeyf);
+        system('/bin/setfacl', ('--remove-all', pp($hstprvkeyf)));
     }
     elsif(pathhelp::os_is_win()) {
         # https://ss64.com/nt/icacls.html
         $ENV{'MSYS2_ARG_CONV_EXCL'} = '/reset';
-        system "icacls \"" . pathhelp::sys_native_abs_path(pp($hstprvkeyf)) . "\" /reset";
-        system "icacls \"" . pathhelp::sys_native_abs_path(pp($hstprvkeyf)) . "\" /grant:r \"$username:(R)\"";
-        system "icacls \"" . pathhelp::sys_native_abs_path(pp($hstprvkeyf)) . "\" /inheritance:r";
+        system('icacls', (pathhelp::sys_native_abs_path(pp($hstprvkeyf)), '/reset'));
+        system('icacls', (pathhelp::sys_native_abs_path(pp($hstprvkeyf)), '/grant:r', "$username:(R)"));
+        system('icacls', (pathhelp::sys_native_abs_path(pp($hstprvkeyf)), '/inheritance:r'));
     }
     # Save md5 and sha256 hashes of public host key
     open(my $rsakeyfile, "<", pp($hstpubkeyf));
@@ -528,6 +533,7 @@ else {
 #  KerberosOrLocalPasswd            : OpenSSH 1.2.1 and later [1]
 #  KerberosTgtPassing               : OpenSSH 1.2.1 and later [1]
 #  KerberosTicketCleanup            : OpenSSH 1.2.1 and later [1]
+#  KexAlgorithms                    : OpenSSH 5.7.0 and later (7.0.0 for '+' support, 7.5.0 for '-' support)
 #  KeyRegenerationInterval          : OpenSSH 1.2.1 till 7.3
 #  ListenAddress                    : OpenSSH 1.2.1 and later
 #  LoginGraceTime                   : OpenSSH 1.2.1 and later
@@ -606,7 +612,7 @@ if($sshdid !~ /OpenSSH-Windows/) {
     push @cfgarr, "PidFile $pidfile_config";
     push @cfgarr, '#';
 }
-if(($sshdid =~ /OpenSSH/) && ($sshdvernum >= 880)) {
+if(($sshdid =~ /OpenSSH/) && ($sshdvernum >= 880) && ($keyalgo eq 'rsa')) {
     push @cfgarr, 'HostKeyAlgorithms +ssh-rsa';
     push @cfgarr, 'PubkeyAcceptedKeyTypes +ssh-rsa';
 }
@@ -625,6 +631,9 @@ push @cfgarr, 'HostbasedAuthentication no';
 push @cfgarr, 'HostbasedUsesNameFromPacketOnly no';
 push @cfgarr, 'IgnoreRhosts yes';
 push @cfgarr, 'IgnoreUserKnownHosts yes';
+if(($sshdid =~ /OpenSSH/) && ($sshdvernum >= 750) && $ENV{'CURL_TEST_SSH_DISABLE_KEX'}) {
+    push @cfgarr, 'KexAlgorithms -' . $ENV{'CURL_TEST_SSH_DISABLE_KEX'};
+}
 push @cfgarr, 'LoginGraceTime 30';
 push @cfgarr, "LogLevel $loglevel";
 push @cfgarr, 'MaxStartups 5';
@@ -814,7 +823,7 @@ if($error) {
 #***************************************************************************
 # Verify that sshd actually supports our generated configuration file
 #
-if(system "\"$sshd\" -t -f $sshdconfig_abs > $sshdlog 2>&1") {
+if(system("\"$sshd\" -t -f $sshdconfig_abs > $sshdlog 2>&1")) {
     logmsg "sshd configuration file $sshdconfig failed verification\n";
     display_sshdlog();
     display_sshdconfig();
@@ -827,11 +836,12 @@ if(system "\"$sshd\" -t -f $sshdconfig_abs > $sshdlog 2>&1") {
 if((! -e pp($knownhosts)) || (! -s pp($knownhosts))) {
     logmsg "generating ssh client known hosts file...\n" if($verbose);
     unlink(pp($knownhosts));
-    if(open(my $rsakeyfile, "<", pp($hstpubkeyf))) {
-        my @rsahostkey = do { local $/ = ' '; <$rsakeyfile> };
-        if(close($rsakeyfile)) {
+    if(open(my $keyfile, "<", pp($hstpubkeyf))) {
+        chomp(my $line = <$keyfile>);
+        if(close($keyfile)) {
             if(open(my $knownhostsh, ">", pp($knownhosts))) {
-                print $knownhostsh "$listenaddr ssh-rsa $rsahostkey[1]\n";
+                my @hostkey = split /\s+/, $line;
+                print $knownhostsh "$listenaddr $hostkey[0] $hostkey[1]\n";
                 if(!close($knownhostsh)) {
                     $error = "Error: cannot close file $knownhosts";
                 }
@@ -1164,7 +1174,7 @@ logmsg "RUN: $cmd\n" if($verbose);
 #
 if($sshdid =~ /OpenSSH-Windows/) {
     # Fake pidfile for ssh server on Windows.
-    if(open(my $out, ">", "$pidfile")) {
+    if(open(my $out, ">", $pidfile)) {
         print $out $$ . "\n";
         close($out);
     }
