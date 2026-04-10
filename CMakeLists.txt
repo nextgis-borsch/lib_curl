@@ -21,6 +21,10 @@
 # SPDX-License-Identifier: curl
 #
 ###########################################################################
+#
+# NextGIS / Borsch integration: Dmitry Baryshnikov (dmitry.baryshnikov@nextgis.com),
+# Mikhail Gusev (gusevmihs@gmail.com). Copyright (C) 2015-2021 NextGIS <info@nextgis.com>
+#
 
 cmake_minimum_required(VERSION 3.7...3.16 FATAL_ERROR)
 message(STATUS "Using CMake version ${CMAKE_VERSION}")
@@ -46,6 +50,15 @@ if(NOT "$ENV{CURL_BUILDINFO}$ENV{CURL_CI}$ENV{CI}" STREQUAL "")
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
+set(NEXTGIS_BORSCH ON)
+if(NOT DEFINED PACKAGE_VENDOR)
+  set(PACKAGE_VENDOR NextGIS)
+endif()
+if(NOT DEFINED PACKAGE_BUGREPORT)
+  set(PACKAGE_BUGREPORT info@nextgis.com)
+endif()
+set(PACKAGE_NAME curl)
+string(TOUPPER "${PACKAGE_NAME}" PACKAGE_UPPER_NAME)
 include(Utilities)
 include(Macros)
 include(CMakeDependentOption)
@@ -64,6 +77,33 @@ string(REGEX REPLACE "([0-9]+\.[0-9]+\.[0-9]+).+" "\\1" _curl_version_sem "${_cu
 project(CURL
   VERSION "${_curl_version_sem}"
   LANGUAGES C)
+
+include(util)
+check_version(CURL_MAJOR_VERSION CURL_MINOR_VERSION CURL_PATCH_VERSION)
+set(VERSION ${CURL_MAJOR_VERSION}.${CURL_MINOR_VERSION}.${CURL_PATCH_VERSION})
+set(CURL_VERSION ${VERSION})
+report_version(${PROJECT_NAME} ${VERSION})
+include(FindAnyProject)
+
+option(OSX_FRAMEWORK "Build libcurl as a macOS framework" OFF)
+if(OSX_FRAMEWORK)
+  set(FRAMEWORK_NAME curl)
+  set(INSTALL_BIN_DIR "bin/" CACHE INTERNAL "Installation directory for executables" FORCE)
+  set(INSTALL_LIB_DIR "Library/Frameworks" CACHE INTERNAL "Installation directory for libraries" FORCE)
+  set(INSTALL_INC_DIR "${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Headers" CACHE INTERNAL "Installation directory for headers" FORCE)
+  set(INSTALL_CMAKECONF_DIR "${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Resources/CMake" CACHE INTERNAL "Installation directory for cmake config files" FORCE)
+  set(SKIP_INSTALL_HEADERS ON)
+  set(SKIP_INSTALL_EXECUTABLES OFF)
+  set(SKIP_INSTALL_FILES ON)
+  set(SKIP_INSTALL_EXPORT ON)
+  set(CMAKE_MACOSX_RPATH ON)
+else()
+  include(GNUInstallDirs)
+  set(INSTALL_BIN_DIR "${CMAKE_INSTALL_BINDIR}" CACHE INTERNAL "Installation directory for executables" FORCE)
+  set(INSTALL_LIB_DIR "${CMAKE_INSTALL_LIBDIR}" CACHE INTERNAL "Installation directory for libraries" FORCE)
+  set(INSTALL_INC_DIR "${CMAKE_INSTALL_INCLUDEDIR}" CACHE INTERNAL "Installation directory for headers" FORCE)
+  set(INSTALL_CMAKECONF_DIR "${CMAKE_INSTALL_DATADIR}/${PACKAGE_NAME}/CMake" CACHE INTERNAL "Installation directory for cmake config files" FORCE)
+endif()
 
 # CMake does not recognize some targets accurately. Touch up configuration manually as a workaround.
 if(WINDOWS_STORE AND MINGW)  # MinGW UWP build
@@ -198,6 +238,10 @@ if(WIN32)
 
   # Apply to all feature checks
   list(APPEND CMAKE_REQUIRED_DEFINITIONS "-DWIN32_LEAN_AND_MEAN")
+
+  if(CMAKE_GENERATOR_TOOLSET MATCHES "v([0-9]+)_xp")
+    add_definitions(-D_WIN32_WINNT=0x0501)
+  endif()
 
   set(CURL_TARGET_WINDOWS_VERSION "" CACHE STRING "Minimum target Windows version as hex string")
   if(CURL_TARGET_WINDOWS_VERSION)
@@ -358,6 +402,11 @@ elseif(BUILD_STATIC_CURL AND NOT BUILD_STATIC_LIBS)
   set(BUILD_STATIC_CURL OFF)
 endif()
 
+if(OSX_FRAMEWORK AND (BUILD_SHARED_LIBS OR BUILD_STATIC_LIBS))
+  message(FATAL_ERROR
+    "OSX_FRAMEWORK: disable BUILD_SHARED_LIBS and BUILD_STATIC_LIBS, or turn off OSX_FRAMEWORK.")
+endif()
+
 # Lib flavour selected for curl tool
 if(BUILD_STATIC_CURL)
   set(LIB_SELECTED_FOR_EXE ${LIB_STATIC})
@@ -401,7 +450,7 @@ set(CURL_LIBS "")
 
 if(ENABLE_ARES)
   set(USE_ARES 1)
-  find_package(Cares MODULE REQUIRED)
+  find_anyproject(Cares REQUIRED MODULE)
   list(APPEND CURL_LIBS CURL::cares)
 endif()
 
@@ -799,13 +848,26 @@ if(_use_core_foundation_and_core_services)
 endif()
 
 if(CURL_USE_OPENSSL)
-  find_package(OpenSSL REQUIRED)
+  find_anyproject(OpenSSL REQUIRED)
   set(_ssl_enabled ON)
   set(USE_OPENSSL ON)
+  set(HAVE_LIBCRYPTO ON)
+  set(HAVE_LIBSSL ON)
 
-  # Depend on OpenSSL via imported targets. This allows our dependents to
-  # get our dependencies transitively.
-  list(APPEND CURL_LIBS OpenSSL::SSL OpenSSL::Crypto)
+  if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+    list(APPEND CURL_LIBS OpenSSL::SSL OpenSSL::Crypto)
+  else()
+    list(APPEND CURL_LIBS ${OPENSSL_LIBRARIES})
+  endif()
+  if(OPENSSL_INCLUDE_DIRS AND NOT OPENSSL_INCLUDE_DIR)
+    set(OPENSSL_INCLUDE_DIR "${OPENSSL_INCLUDE_DIRS}")
+  endif()
+
+  if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+    set(CURL_OPENSSL_LINK_LIBS OpenSSL::SSL OpenSSL::Crypto)
+  else()
+    set(CURL_OPENSSL_LINK_LIBS ${OPENSSL_LIBRARIES})
+  endif()
 
   if(CURL_DEFAULT_SSL_BACKEND AND CURL_DEFAULT_SSL_BACKEND STREQUAL "openssl")
     set(_valid_default_ssl_backend TRUE)
@@ -813,7 +875,7 @@ if(CURL_USE_OPENSSL)
   set(_curl_ca_bundle_supported TRUE)
 
   cmake_push_check_state()
-  list(APPEND CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+  list(APPEND CMAKE_REQUIRED_LIBRARIES ${CURL_OPENSSL_LINK_LIBS})
   if(NOT DEFINED HAVE_BORINGSSL)
     check_symbol_exists("OPENSSL_IS_BORINGSSL" "openssl/base.h" HAVE_BORINGSSL)
   endif()
@@ -951,9 +1013,12 @@ set(HAVE_LIBZ OFF)
 curl_dependency_option(CURL_ZLIB ZLIB "ZLIB")
 if(ZLIB_FOUND)
   set(HAVE_LIBZ ON)
-  # Depend on ZLIB via imported targets. This allows our dependents to
-  # get our dependencies transitively.
-  list(APPEND CURL_LIBS ZLIB::ZLIB)
+  if(TARGET ZLIB::ZLIB)
+    list(APPEND CURL_LIBS ZLIB::ZLIB)
+  else()
+    list(APPEND CURL_LIBS ${ZLIB_LIBRARIES})
+    include_directories(${ZLIB_INCLUDE_DIRS})
+  endif()
 endif()
 
 set(HAVE_BROTLI OFF)
@@ -978,10 +1043,18 @@ endif()
 macro(curl_openssl_check_exists)
   cmake_push_check_state()
   if(USE_OPENSSL)
-    list(APPEND CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+    if(CURL_OPENSSL_LINK_LIBS)
+      list(APPEND CMAKE_REQUIRED_LIBRARIES ${CURL_OPENSSL_LINK_LIBS})
+    else()
+      list(APPEND CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+    endif()
     list(APPEND CMAKE_REQUIRED_DEFINITIONS "-DOPENSSL_SUPPRESS_DEPRECATED")  # for SSL_CTX_set_srp_username deprecated since 3.0.0
     if(HAVE_LIBZ)
-      list(APPEND CMAKE_REQUIRED_LIBRARIES ZLIB::ZLIB)
+      if(TARGET ZLIB::ZLIB)
+        list(APPEND CMAKE_REQUIRED_LIBRARIES ZLIB::ZLIB)
+      else()
+        list(APPEND CMAKE_REQUIRED_LIBRARIES ${ZLIB_LIBRARIES})
+      endif()
     endif()
     if(WIN32)
       list(APPEND CMAKE_REQUIRED_LIBRARIES "bcrypt")  # for OpenSSL/LibreSSL
@@ -1175,7 +1248,11 @@ if(NOT CURL_DISABLE_LDAP)
     # Check for LDAP
     cmake_push_check_state()
     if(USE_OPENSSL)
-      list(APPEND CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+      if(CURL_OPENSSL_LINK_LIBS)
+        list(APPEND CMAKE_REQUIRED_LIBRARIES ${CURL_OPENSSL_LINK_LIBS})
+      else()
+        list(APPEND CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+      endif()
     endif()
     find_package(LDAP MODULE)
     if(LDAP_FOUND)
@@ -1254,7 +1331,7 @@ if(USE_LIBIDN2 AND NOT USE_APPLE_IDN AND NOT USE_WIN32_IDN)
 endif()
 
 # libpsl
-option(CURL_USE_LIBPSL "Use libpsl" ON)
+option(CURL_USE_LIBPSL "Use libpsl" OFF)
 mark_as_advanced(CURL_USE_LIBPSL)
 set(USE_LIBPSL OFF)
 if(CURL_USE_LIBPSL)
@@ -2438,7 +2515,11 @@ if(NOT CURL_DISABLE_INSTALL)
 
   # The `-DEV` part is important
   string(REGEX REPLACE "([0-9]+\.[0-9]+)\.([0-9]+.*)" "\\2" CPACK_PACKAGE_VERSION_PATCH "${_curl_version}")
-  set(CPACK_GENERATOR "TGZ")
+  # e.g. curl-8.19.0-MSVC-19.29-64bit.zip (see CMake/util.cmake get_cpack_filename)
+  set(_cpack_semver "${CURL_MAJOR_VERSION}.${CURL_MINOR_VERSION}.${CURL_PATCH_VERSION}")
+  get_cpack_filename(${_cpack_semver} CPACK_PACKAGE_FILE_NAME)
+  set(CPACK_PACKAGE_VERSION "${_cpack_semver}")
+  set(CPACK_GENERATOR "ZIP")
   include(CPack)
 endif()
 
