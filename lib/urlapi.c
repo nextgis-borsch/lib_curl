@@ -251,7 +251,7 @@ static CURLUcode parse_hostname_login(struct Curl_URL *u,
                                       unsigned int flags,
                                       size_t *offset) /* to the hostname */
 {
-  CURLUcode result = CURLUE_OK;
+  CURLUcode ures = CURLUE_OK;
   CURLcode ccode;
   char *userp = NULL;
   char *passwdp = NULL;
@@ -292,14 +292,14 @@ static CURLUcode parse_hostname_login(struct Curl_URL *u,
   if(ccode) {
     /* the only possible error from Curl_parse_login_details is out of
        memory: */
-    result = CURLUE_OUT_OF_MEMORY;
+    ures = CURLUE_OUT_OF_MEMORY;
     goto out;
   }
 
   if(userp) {
     if(flags & CURLU_DISALLOW_USER) {
       /* Option DISALLOW_USER is set and URL contains username. */
-      result = CURLUE_USER_NOT_ALLOWED;
+      ures = CURLUE_USER_NOT_ALLOWED;
       goto out;
     }
     curlx_free(u->user);
@@ -329,9 +329,11 @@ out:
   u->password = NULL;
   u->options = NULL;
 
-  return result;
+  return ures;
 }
 
+UNITTEST CURLUcode Curl_parse_port(struct Curl_URL *u, struct dynbuf *host,
+                                   bool has_scheme);
 UNITTEST CURLUcode Curl_parse_port(struct Curl_URL *u, struct dynbuf *host,
                                    bool has_scheme)
 {
@@ -657,21 +659,21 @@ out:
 /* used for HTTP/2 server push */
 CURLUcode Curl_url_set_authority(CURLU *u, const char *authority)
 {
-  CURLUcode result;
+  CURLUcode ures;
   struct dynbuf host;
 
   DEBUGASSERT(authority);
   curlx_dyn_init(&host, CURL_MAX_INPUT_LENGTH);
 
-  result = parse_authority(u, authority, strlen(authority),
-                           CURLU_DISALLOW_USER, &host, !!u->scheme);
-  if(result)
+  ures = parse_authority(u, authority, strlen(authority),
+                         CURLU_DISALLOW_USER, &host, !!u->scheme);
+  if(ures)
     curlx_dyn_free(&host);
   else {
     curlx_free(u->host);
     u->host = curlx_dyn_ptr(&host);
   }
-  return result;
+  return ures;
 }
 
 /*
@@ -718,38 +720,36 @@ UNITTEST int dedotdotify(const char *input, size_t clen, char **outp)
   struct dynbuf out;
   CURLcode result = CURLE_OK;
 
+  /* variables for leading dot checks */
+  const char *dinput = input;
+  size_t dlen = clen;
+
   *outp = NULL;
-  /* the path always starts with a slash, and a slash has not dot */
+  /* a single byte path cannot be cleaned up */
   if(clen < 2)
     return 0;
 
   curlx_dyn_init(&out, clen + 1);
 
-  /*  A. If the input buffer begins with a prefix of "../" or "./", then
-      remove that prefix from the input buffer; otherwise, */
-  if(is_dot(&input, &clen)) {
-    const char *p = input;
-    size_t blen = clen;
-
-    if(!clen)
-      /* . [end] */
-      goto end;
-    else if(ISSLASH(*p)) {
+  /* if the input buffer begins with a prefix of "../" or "./", then remove
+     that prefix from the input buffer; otherwise, */
+  if(is_dot(&dinput, &dlen)) {
+    if(ISSLASH(*dinput)) {
       /* one dot followed by a slash */
-      input = p + 1;
-      clen--;
+      input = dinput + 1;
+      clen = dlen - 1;
     }
 
-    /*  D. if the input buffer consists only of "." or "..", then remove
-        that from the input buffer; otherwise, */
-    else if(is_dot(&p, &blen)) {
-      if(!blen)
+    /* if the input buffer consists only of "." or "..", then remove
+       that from the input buffer; otherwise, */
+    else if(is_dot(&dinput, &dlen)) {
+      if(!dlen)
         /* .. [end] */
         goto end;
-      else if(ISSLASH(*p)) {
+      else if(ISSLASH(*dinput)) {
         /* ../ */
-        input = p + 1;
-        clen = blen - 1;
+        input = dinput + 1;
+        clen = dlen - 1;
       }
     }
   }
@@ -758,9 +758,9 @@ UNITTEST int dedotdotify(const char *input, size_t clen, char **outp)
     if(ISSLASH(*input)) {
       const char *p = &input[1];
       size_t blen = clen - 1;
-      /*  B. if the input buffer begins with a prefix of "/./" or "/.", where
-          "."  is a complete path segment, then replace that prefix with "/" in
-          the input buffer; otherwise, */
+      /* if the input buffer begins with a prefix of "/./" or "/.", where "."
+         is a complete path segment, then replace that prefix with "/" in the
+         input buffer; otherwise, */
       if(is_dot(&p, &blen)) {
         if(!blen) { /* /. */
           result = curlx_dyn_addn(&out, "/", 1);
@@ -772,10 +772,10 @@ UNITTEST int dedotdotify(const char *input, size_t clen, char **outp)
           continue;
         }
 
-        /*  C. if the input buffer begins with a prefix of "/../" or "/..",
-            where ".." is a complete path segment, then replace that prefix
-            with "/" in the input buffer and remove the last segment and its
-            preceding "/" (if any) from the output buffer; otherwise, */
+        /* if the input buffer begins with a prefix of "/../" or "/..", where
+           ".." is a complete path segment, then replace that prefix with "/"
+           in the input buffer and remove the last segment and its preceding
+           "/" (if any) from the output buffer; otherwise, */
         else if(is_dot(&p, &blen) && (ISSLASH(*p) || !blen)) {
           /* remove the last segment from the output buffer */
           size_t len = curlx_dyn_len(&out);
@@ -798,10 +798,10 @@ UNITTEST int dedotdotify(const char *input, size_t clen, char **outp)
       }
     }
 
-    /*  E. move the first path segment in the input buffer to the end of
-        the output buffer, including the initial "/" character (if any) and
-        any subsequent characters up to, but not including, the next "/"
-        character or the end of the input buffer. */
+    /* move the first path segment in the input buffer to the end of the
+       output buffer, including the initial "/" character (if any) and any
+       subsequent characters up to, but not including, the next "/" character
+       or the end of the input buffer. */
 
     result = curlx_dyn_addn(&out, input, 1);
     input++;
@@ -1012,16 +1012,16 @@ static CURLUcode guess_scheme(CURLU *u, struct dynbuf *host)
 static CURLUcode handle_fragment(CURLU *u, const char *fragment,
                                  size_t fraglen, unsigned int flags)
 {
-  CURLUcode result;
+  CURLUcode ures;
   u->fragment_present = TRUE;
   if(fraglen > 1) {
     /* skip the leading '#' in the copy but include the terminating null */
     if(flags & CURLU_URLENCODE) {
       struct dynbuf enc;
       curlx_dyn_init(&enc, CURL_MAX_INPUT_LENGTH);
-      result = urlencode_str(&enc, fragment + 1, fraglen - 1, TRUE, FALSE);
-      if(result)
-        return result;
+      ures = urlencode_str(&enc, fragment + 1, fraglen - 1, TRUE, FALSE);
+      if(ures)
+        return ures;
       u->fragment = curlx_dyn_ptr(&enc);
     }
     else {
@@ -1040,12 +1040,12 @@ static CURLUcode handle_query(CURLU *u, const char *query,
   if(qlen > 1) {
     if(flags & CURLU_URLENCODE) {
       struct dynbuf enc;
-      CURLUcode result;
+      CURLUcode ures;
       curlx_dyn_init(&enc, CURL_MAX_INPUT_LENGTH);
       /* skip the leading question mark */
-      result = urlencode_str(&enc, query + 1, qlen - 1, TRUE, TRUE);
-      if(result)
-        return result;
+      ures = urlencode_str(&enc, query + 1, qlen - 1, TRUE, TRUE);
+      if(ures)
+        return ures;
       u->query = curlx_dyn_ptr(&enc);
     }
     else {
@@ -1064,24 +1064,22 @@ static CURLUcode handle_query(CURLU *u, const char *query,
 }
 
 static CURLUcode handle_path(CURLU *u, const char *path,
-                             size_t pathlen, unsigned int flags)
+                             size_t pathlen, unsigned int flags,
+                             bool is_file)
 {
-  CURLUcode result;
+  CURLUcode ures;
   if(pathlen && (flags & CURLU_URLENCODE)) {
     struct dynbuf enc;
     curlx_dyn_init(&enc, CURL_MAX_INPUT_LENGTH);
-    result = urlencode_str(&enc, path, pathlen, TRUE, FALSE);
-    if(result)
-      return result;
+    ures = urlencode_str(&enc, path, pathlen, TRUE, FALSE);
+    if(ures)
+      return ures;
     pathlen = curlx_dyn_len(&enc);
     path = u->path = curlx_dyn_ptr(&enc);
   }
 
-  if(pathlen <= 1) {
-    /* there is no path left or the slash, unset */
-    path = NULL;
-  }
-  else {
+  if(pathlen >= (size_t)(1 + !is_file)) {
+    /* paths for file:// scheme can be one byte, others need to be two */
     if(!u->path) {
       u->path = curlx_memdup0(path, pathlen);
       if(!u->path)
@@ -1114,15 +1112,16 @@ static CURLUcode parseurl(const char *url, CURLU *u, unsigned int flags)
   char schemebuf[MAX_SCHEME_LEN + 1];
   size_t schemelen = 0;
   size_t urllen;
-  CURLUcode result = CURLUE_OK;
+  CURLUcode ures = CURLUE_OK;
   struct dynbuf host;
+  bool is_file = FALSE;
 
   DEBUGASSERT(url);
 
   curlx_dyn_init(&host, CURL_MAX_INPUT_LENGTH);
 
-  result = Curl_junkscan(url, &urllen, !!(flags & CURLU_ALLOW_SPACE));
-  if(result)
+  ures = Curl_junkscan(url, &urllen, !!(flags & CURLU_ALLOW_SPACE));
+  if(ures)
     goto fail;
 
   schemelen = Curl_is_absolute_url(url, schemebuf, sizeof(schemebuf),
@@ -1130,13 +1129,15 @@ static CURLUcode parseurl(const char *url, CURLU *u, unsigned int flags)
                                             CURLU_DEFAULT_SCHEME));
 
   /* handle the file: scheme */
-  if(schemelen && !strcmp(schemebuf, "file"))
-    result = parse_file(url, urllen, u, &host, &path, &pathlen);
+  if(schemelen && !strcmp(schemebuf, "file")) {
+    is_file = TRUE;
+    ures = parse_file(url, urllen, u, &host, &path, &pathlen);
+  }
   else {
     const char *hostp = NULL;
     size_t hostlen;
-    result = parse_scheme(url, u, schemebuf, schemelen, flags, &hostp);
-    if(result)
+    ures = parse_scheme(url, u, schemebuf, schemelen, flags, &hostp);
+    if(ures)
       goto fail;
 
     /* find the end of the hostname + port number */
@@ -1146,49 +1147,49 @@ static CURLUcode parseurl(const char *url, CURLU *u, unsigned int flags)
     /* this pathlen also contains the query and the fragment */
     pathlen = urllen - (path - url);
     if(hostlen) {
-      result = parse_authority(u, hostp, hostlen, flags, &host,
-                               u->scheme != NULL);
-      if(!result && (flags & CURLU_GUESS_SCHEME) && !u->scheme)
-        result = guess_scheme(u, &host);
+      ures = parse_authority(u, hostp, hostlen, flags, &host,
+                             u->scheme != NULL);
+      if(!ures && (flags & CURLU_GUESS_SCHEME) && !u->scheme)
+        ures = guess_scheme(u, &host);
     }
     else if(flags & CURLU_NO_AUTHORITY) {
       /* allowed to be empty. */
       if(curlx_dyn_add(&host, ""))
-        result = CURLUE_OUT_OF_MEMORY;
+        ures = CURLUE_OUT_OF_MEMORY;
     }
     else
-      result = CURLUE_NO_HOST;
+      ures = CURLUE_NO_HOST;
   }
-  if(!result) {
+  if(!ures) {
     /* The path might at this point contain a fragment and/or a query to
        handle */
     const char *fragment = strchr(path, '#');
     if(fragment) {
       size_t fraglen = pathlen - (fragment - path);
-      result = handle_fragment(u, fragment, fraglen, flags);
+      ures = handle_fragment(u, fragment, fraglen, flags);
       /* after this, pathlen still contains the query */
       pathlen -= fraglen;
     }
   }
-  if(!result) {
+  if(!ures) {
     const char *query = memchr(path, '?', pathlen);
     if(query) {
       size_t qlen = pathlen - (query - path);
-      result = handle_query(u, query, qlen, flags);
+      ures = handle_query(u, query, qlen, flags);
       pathlen -= qlen;
     }
   }
-  if(!result)
+  if(!ures)
     /* the fragment and query parts are trimmed off from the path */
-    result = handle_path(u, path, pathlen, flags);
-  if(!result) {
+    ures = handle_path(u, path, pathlen, flags, is_file);
+  if(!ures) {
     u->host = curlx_dyn_ptr(&host);
     return CURLUE_OK;
   }
 fail:
   curlx_dyn_free(&host);
   free_urlhandle(u);
-  return result;
+  return ures;
 }
 
 /*
@@ -1197,15 +1198,15 @@ fail:
 static CURLUcode parseurl_and_replace(const char *url, CURLU *u,
                                       unsigned int flags)
 {
-  CURLUcode result;
+  CURLUcode ures;
   CURLU tmpurl;
   memset(&tmpurl, 0, sizeof(tmpurl));
-  result = parseurl(url, &tmpurl, flags);
-  if(!result) {
+  ures = parseurl(url, &tmpurl, flags);
+  if(!ures) {
     free_urlhandle(u);
     *u = tmpurl;
   }
-  return result;
+  return ures;
 }
 
 /*
@@ -1649,6 +1650,7 @@ static CURLUcode set_url_scheme(CURLU *u, const char *scheme,
     const char *s = scheme;
     if(ISALPHA(*s)) {
       /* ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) */
+      s++;
       while(--plen) {
         if(ISALNUM(*s) || (*s == '+') || (*s == '-') || (*s == '.'))
           s++; /* fine */
@@ -1737,37 +1739,37 @@ static CURLUcode urlset_clear(CURLU *u, CURLUPart what)
     memset(u, 0, sizeof(struct Curl_URL));
     break;
   case CURLUPART_SCHEME:
-    Curl_safefree(u->scheme);
+    curlx_safefree(u->scheme);
     u->guessed_scheme = FALSE;
     break;
   case CURLUPART_USER:
-    Curl_safefree(u->user);
+    curlx_safefree(u->user);
     break;
   case CURLUPART_PASSWORD:
-    Curl_safefree(u->password);
+    curlx_safefree(u->password);
     break;
   case CURLUPART_OPTIONS:
-    Curl_safefree(u->options);
+    curlx_safefree(u->options);
     break;
   case CURLUPART_HOST:
-    Curl_safefree(u->host);
+    curlx_safefree(u->host);
     break;
   case CURLUPART_ZONEID:
-    Curl_safefree(u->zoneid);
+    curlx_safefree(u->zoneid);
     break;
   case CURLUPART_PORT:
     u->portnum = 0;
-    Curl_safefree(u->port);
+    curlx_safefree(u->port);
     break;
   case CURLUPART_PATH:
-    Curl_safefree(u->path);
+    curlx_safefree(u->path);
     break;
   case CURLUPART_QUERY:
-    Curl_safefree(u->query);
+    curlx_safefree(u->query);
     u->query_present = FALSE;
     break;
   case CURLUPART_FRAGMENT:
-    Curl_safefree(u->fragment);
+    curlx_safefree(u->fragment);
     u->fragment_present = FALSE;
     break;
   default:
@@ -1845,7 +1847,7 @@ CURLUcode curl_url_set(CURLU *u, CURLUPart what,
     break;
   case CURLUPART_HOST:
     storep = &u->host;
-    Curl_safefree(u->zoneid);
+    curlx_safefree(u->zoneid);
     break;
   case CURLUPART_ZONEID:
     storep = &u->zoneid;

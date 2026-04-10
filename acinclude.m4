@@ -1311,22 +1311,65 @@ AC_DEFUN([CURL_CHECK_WIN32_CRYPTO], [
   esac
 ])
 
-dnl CURL_EXPORT_PCDIR ($pcdir)
+dnl CURL_EXPORT_PCDIR ($pcdir, [$additive])
 dnl ------------------------
-dnl if $pcdir is not empty, set PKG_CONFIG_LIBDIR to $pcdir and export
+dnl if $pcdir is not empty, set PKG_CONFIG_LIBDIR to $pcdir and export.
+dnl if $additive is set, extend PKG_CONFIG_PATH instead, by prepending $pcdir
+dnl to it, to ensure that system locations are still checked. This is
+dnl necessary for modules that depend on modules residing there
+dnl (e.g. gnutls.pc).
 dnl
-dnl we need this macro since pkg-config distinguishes among empty and unset
-dnl variable while checking PKG_CONFIG_LIBDIR
+dnl we need this macro to limit/expand search locations to/with a custom
+dnl configured one.
 dnl
 
 AC_DEFUN([CURL_EXPORT_PCDIR], [
   if test -n "$1"; then
-    PKG_CONFIG_LIBDIR="$1"
-    export PKG_CONFIG_LIBDIR
+    if test -n "$2"; then
+      dnl honor system locations
+      PKG_CONFIG_PATH="$1${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+      export PKG_CONFIG_PATH
+    else
+      dnl ignore and override system locations
+      PKG_CONFIG_LIBDIR="$1"
+      export PKG_CONFIG_LIBDIR
+    fi
   fi
 ])
 
-dnl CURL_CHECK_PKGCONFIG ($module, [$pcdir])
+dnl CURL_TRACE_PCDIR ($module, [$pcdir], [$additive])
+dnl ------------------------
+dnl show pkg-config module lookup details, along with a detailed errors
+dnl message in case of failure. Supports both pkg-config and pkgconf.
+dnl
+
+AC_DEFUN([CURL_TRACE_PCDIR], [
+  dnl Example pkgconf line:
+  dnl   libpkgconf/pkg.c:746 [pkgconf_pkg_t *pkgconf_pkg_try_specific_path(pkgconf_client_t *, [...]*)]:
+  dnl     trying path: /usr/local/lib/pkgconfig for libngtcp2_crypto_gnutls
+  dnl Rest of strings are for catching classic pkg-config lines.
+  trc=`CURL_EXPORT_PCDIR([$2], [$3])
+    if test -n "$PKG_CONFIG_LIBDIR"; then
+      echo "PKG_CONFIG_LIBDIR: '$PKG_CONFIG_LIBDIR'"
+    fi
+    if test -n "$PKG_CONFIG_PATH"; then
+      echo "PKG_CONFIG_PATH: '$PKG_CONFIG_PATH'"
+    fi
+    $PKGCONFIG --exists --debug $1 2>&1 | \
+      $EGREP '(trying path:|Adding directory|Looking for|Scanning directory|Cannot open directory)' | \
+      $SED 's/^.*trying path:/trying path:/'`
+  msg=`CURL_EXPORT_PCDIR([$2], [$3])
+    $PKGCONFIG --exists --print-errors $1 2>&1`
+  if test -n "$msg"; then
+    trc=`echo "$trc"; echo '==== error:'; echo "$msg"`
+  fi
+  AC_MSG_NOTICE([pkg-config --exists $1 trace:
+---- begin
+${trc}
+---- end])
+])
+
+dnl CURL_CHECK_PKGCONFIG ($module, [$pcdir], [$additive])
 dnl ------------------------
 dnl search for the pkg-config tool. Set the PKGCONFIG variable to hold the
 dnl path to it, or 'no' if not found/present.
@@ -1348,16 +1391,22 @@ AC_DEFUN([CURL_CHECK_PKGCONFIG], [
   if test "$PKGCONFIG" != "no"; then
     AC_MSG_CHECKING([for $1 options with pkg-config])
     dnl ask pkg-config about $1
-    itexists=`CURL_EXPORT_PCDIR([$2]) dnl
+    itexists=`CURL_EXPORT_PCDIR([$2], [$3]) dnl
       $PKGCONFIG --exists $1 >/dev/null 2>&1 && echo 1`
 
     if test -z "$itexists"; then
       dnl pkg-config does not have info about the given module! set the
       dnl variable to 'no'
-      PKGCONFIG="no"
       AC_MSG_RESULT([no])
+      if test -n "$CURL_TRACE_PKG_CONFIG$CURL_CI"; then
+        CURL_TRACE_PCDIR([$1], [$2], [$3])
+      fi
+      PKGCONFIG="no"
     else
       AC_MSG_RESULT([found])
+      if test -n "$CURL_TRACE_PKG_CONFIG"; then
+        CURL_TRACE_PCDIR([$1], [$2], [$3])
+      fi
     fi
   fi
 ])

@@ -23,6 +23,8 @@
  ***************************************************************************/
 #include "tool_setup.h"
 
+#include "curlx/nonblock.h" /* for curlx_nonblock() */
+
 #ifdef HAVE_LOCALE_H
 #  include <locale.h>
 #endif
@@ -134,7 +136,7 @@ static bool is_pkcs11_uri(const char *string)
  * For fixed files, find out the size of the EOF block and adjust.
  *
  * For all others, have to read the entire file in, discarding the contents.
- * Most posted text files will be small, and binary files like zlib archives
+ * Most posted text files are small, and binary files like zlib archives
  * and CD/DVD images should be either a STREAM_LF format or a fixed format.
  *
  */
@@ -233,6 +235,10 @@ static struct per_transfer *del_per_transfer(struct per_transfer *per)
   else
     transfersl = p;
 
+  curlx_free(per->uploadfile);
+  curlx_free(per->outfile);
+  curlx_free(per->url);
+  curl_easy_cleanup(per->curl);
   curlx_free(per);
 
   return n;
@@ -248,7 +254,7 @@ static CURLcode pre_transfer(struct per_transfer *per)
     /* VMS Note:
      *
      * Reading binary from files can be a problem... Only FIXED, VAR
-     * etc WITHOUT implied CC will work. Others need a \n appended to
+     * etc WITHOUT implied CC do work. Others need a \n appended to
      * a line
      *
      * - Stat gives a size but this is UNRELIABLE in VMS. E.g.
@@ -319,7 +325,7 @@ void single_transfer_cleanup(void)
   struct State *state = &global->state;
   /* Free list of remaining URLs */
   glob_cleanup(&state->urlglob);
-  tool_safefree(state->uploadfile);
+  curlx_safefree(state->uploadfile);
   /* Free list of globbed upload files */
   glob_cleanup(&state->inglob);
 }
@@ -350,35 +356,102 @@ static bool is_outfile_auto_resumable(struct OperationConfig *config,
     result != CURLE_WRITE_ERROR && result != CURLE_RANGE_ERROR;
 }
 
+enum retryreason {
+  RETRY_NO,
+  RETRY_ALL_ERRORS,
+  RETRY_TIMEOUT,
+  RETRY_CONNREFUSED,
+  RETRY_HTTP,
+  RETRY_FTP
+};
+
+/* figure out how long to wait until retry */
+static uint32_t retry_sleep(struct OperationConfig *config,
+                            struct per_transfer *per,
+                            enum retryreason retry,
+                            bool *retryp)
+{
+  static const char * const m[] = {
+    "(retrying all errors)",
+    ": timeout",
+    ": connection refused",
+    ": HTTP error",
+    ": FTP error"
+  };
+  CURL *curl = per->curl;
+  uint32_t sleeptime = 0;
+  if(RETRY_HTTP == retry) {
+    curl_off_t retry_after = 0;
+    curl_easy_getinfo(curl, CURLINFO_RETRY_AFTER, &retry_after);
+    if(retry_after) {
+      /* make sure it does not overflow */
+      if(retry_after > (curl_off_t)(UINT32_MAX / 1000))
+        sleeptime = UINT32_MAX;
+      else
+        sleeptime = (uint32_t)retry_after * 1000U; /* milliseconds */
+
+      /* if adding retry_after seconds to the process would exceed the
+         maximum time allowed for retrying, then exit the retries right
+         away */
+      if(config->retry_maxtime_ms) {
+        timediff_t ms = curlx_timediff_ms(curlx_now(), per->retrystart);
+
+        if((CURL_OFF_T_MAX - sleeptime < ms) ||
+           (ms + sleeptime > config->retry_maxtime_ms)) {
+          warnf("The Retry-After: time would "
+                "make this command line exceed the maximum allowed time "
+                "for retries.");
+          *retryp = FALSE;
+          return 0; /* no retry */
+        }
+      }
+    }
+  }
+  if(!sleeptime && !config->retry_delay_ms) {
+    if(!per->retry_sleep)
+      per->retry_sleep = RETRY_SLEEP_DEFAULT;
+    else
+      per->retry_sleep *= 2;
+    if(per->retry_sleep > RETRY_SLEEP_MAX)
+      per->retry_sleep = RETRY_SLEEP_MAX;
+  }
+  if(!sleeptime)
+    sleeptime = per->retry_sleep;
+
+  warnf("Problem %s. Retrying in %u%s%.*u second%s. "
+        "%ld retr%s left.",
+        m[retry - 1], sleeptime / 1000,
+        (sleeptime % 1000 ? "." : ""),
+        (sleeptime % 1000 ? 3 : 0),
+        sleeptime % 1000,
+        (sleeptime == 1000 ? "" : "s"),
+        per->retry_remaining,
+        (per->retry_remaining > 1 ? "ies" : "y"));
+
+  return sleeptime;
+}
+
 static CURLcode retrycheck(struct OperationConfig *config,
                            struct per_transfer *per,
                            CURLcode result,
                            bool *retryp,
-                           long *delayms)
+                           uint32_t *delayms)
 {
   CURL *curl = per->curl;
   struct OutStruct *outs = &per->outs;
-  enum {
-    RETRY_NO,
-    RETRY_ALL_ERRORS,
-    RETRY_TIMEOUT,
-    RETRY_CONNREFUSED,
-    RETRY_HTTP,
-    RETRY_FTP,
-    RETRY_LAST /* not used */
-  } retry = RETRY_NO;
+  enum retryreason reason = RETRY_NO;
   if((result == CURLE_OPERATION_TIMEDOUT) ||
      (result == CURLE_COULDNT_RESOLVE_HOST) ||
      (result == CURLE_COULDNT_RESOLVE_PROXY) ||
      (result == CURLE_FTP_ACCEPT_TIMEOUT))
     /* retry timeout always */
-    retry = RETRY_TIMEOUT;
+    reason = RETRY_TIMEOUT;
   else if(config->retry_connrefused &&
           (result == CURLE_COULDNT_CONNECT)) {
     long oserrno = 0;
     curl_easy_getinfo(curl, CURLINFO_OS_ERRNO, &oserrno);
     if(SOCKECONNREFUSED == oserrno)
-      retry = RETRY_CONNREFUSED;
+      reason = RETRY_CONNREFUSED;
   }
   else if((result == CURLE_OK) ||
           (config->fail && (result == CURLE_HTTP_RETURNED_ERROR))) {
@@ -402,7 +475,7 @@ static CURLcode retrycheck(struct OperationConfig *config,
       case 504: /* Gateway Timeout */
       case 522: /* Connection Timed Out (Cloudflare) */
       case 524: /* Proxy Read Timeout (Cloudflare) */
-        retry = RETRY_HTTP;
+        reason = RETRY_HTTP;
         /*
          * At this point, we have already written data to the output
          * file (or terminal). If we write to a file, we must rewind
@@ -431,72 +504,24 @@ static CURLcode retrycheck(struct OperationConfig *config,
        * amount of users and we are not one of them. All 4xx codes
        * are transient.
        */
-      retry = RETRY_FTP;
+      reason = RETRY_FTP;
   }
 
-  if(result && !retry && config->retry_all_errors)
-    retry = RETRY_ALL_ERRORS;
+  if(result && !reason && config->retry_all_errors)
+    reason = RETRY_ALL_ERRORS;
 
-  if(retry) {
-    long sleeptime = 0;
-    curl_off_t retry_after = 0;
-    static const char * const m[] = {
-      NULL,
-      "(retrying all errors)",
-      ": timeout",
-      ": connection refused",
-      ": HTTP error",
-      ": FTP error"
-    };
+  if(reason) {
     bool truncate = TRUE; /* truncate output file */
 
-    if(RETRY_HTTP == retry) {
-      curl_easy_getinfo(curl, CURLINFO_RETRY_AFTER, &retry_after);
-      if(retry_after) {
-        /* store in a 'long', make sure it does not overflow */
-        if(retry_after > LONG_MAX / 1000)
-          sleeptime = LONG_MAX;
-        else if((retry_after * 1000) > sleeptime)
-          sleeptime = (long)retry_after * 1000; /* milliseconds */
+    /* how long to wait until next attempt */
+    uint32_t sleeptime;
 
-        /* if adding retry_after seconds to the process would exceed the
-           maximum time allowed for retrying, then exit the retries right
-           away */
-        if(config->retry_maxtime_ms) {
-          timediff_t ms = curlx_timediff_ms(curlx_now(), per->retrystart);
+    *retryp = TRUE;
 
-          if((CURL_OFF_T_MAX - sleeptime < ms) ||
-             (ms + sleeptime > config->retry_maxtime_ms)) {
-            warnf("The Retry-After: time would "
-                  "make this command line exceed the maximum allowed time "
-                  "for retries.");
-            *retryp = FALSE;
-            return CURLE_OK; /* no retry */
-          }
-        }
-      }
-    }
-    if(!sleeptime && !config->retry_delay_ms) {
-      if(!per->retry_sleep)
-        per->retry_sleep = RETRY_SLEEP_DEFAULT;
-      else
-        per->retry_sleep *= 2;
-      if(per->retry_sleep > RETRY_SLEEP_MAX)
-        per->retry_sleep = RETRY_SLEEP_MAX;
-    }
-    if(!sleeptime)
-      sleeptime = per->retry_sleep;
-    warnf("Problem %s. "
-          "Will retry in %ld%s%.*ld second%s. "
-          "%ld retr%s left.",
-          m[retry], sleeptime / 1000L,
-          (sleeptime % 1000L ? "." : ""),
-          (sleeptime % 1000L ? 3 : 0),
-          sleeptime % 1000L,
-          (sleeptime == 1000L ? "" : "s"),
-          per->retry_remaining,
-          (per->retry_remaining > 1 ? "ies" : "y"));
-
+    sleeptime = retry_sleep(config, per, reason, retryp);
+    if(!*retryp)
+      /* no retry */
+      return CURLE_OK;
     per->retry_remaining--;
 
     /* Skip truncation of outfile if auto-resume is enabled for download and
@@ -552,9 +577,9 @@ static CURLcode retrycheck(struct OperationConfig *config,
         fflush(outs->stream);
         notef("Throwing away %" CURL_FORMAT_CURL_OFF_T " bytes", outs->bytes);
         /* truncate file at the position where we started appending */
-#if defined(HAVE_FTRUNCATE) && !defined(__DJGPP__) && !defined(__AMIGA__)
-        if(ftruncate(fileno(outs->stream), outs->init)) {
-          /* when truncate fails, we cannot append as then we will
+
+        if(toolx_ftruncate(fileno(outs->stream), outs->init)) {
+          /* when truncate fails, we cannot append as then we
              create something strange, bail out */
           errorf("Failed to truncate file");
           return CURLE_WRITE_ERROR;
@@ -562,11 +587,7 @@ static CURLcode retrycheck(struct OperationConfig *config,
         /* now seek to the end of the file, the position where we
            truncated the file in a large file-safe way */
         rc = fseek(outs->stream, 0, SEEK_END);
-#else
-        /* ftruncate is not available, so reposition the file to the location
-           we would have truncated it. */
-        rc = curlx_fseek(outs->stream, outs->init, SEEK_SET);
-#endif
+
         if(rc) {
           errorf("Failed seeking to end of file");
           return CURLE_WRITE_ERROR;
@@ -574,7 +595,6 @@ static CURLcode retrycheck(struct OperationConfig *config,
         outs->bytes = 0; /* clear for next round */
       }
     }
-    *retryp = TRUE;
     per->num_retries++;
     *delayms = sleeptime;
     result = CURLE_OK;
@@ -708,7 +728,7 @@ static CURLcode post_close_output(struct per_transfer *per,
 static CURLcode post_per_transfer(struct per_transfer *per,
                                   CURLcode result,
                                   bool *retryp,
-                                  long *delay) /* milliseconds! */
+                                  uint32_t *delay) /* milliseconds! */
 {
   struct OutStruct *outs = &per->outs;
   struct OperationConfig *config = per->config;
@@ -767,20 +787,16 @@ static CURLcode post_per_transfer(struct per_transfer *per,
     curlx_fclose(per->heads.stream);
 
   if(per->heads.alloc_filename)
-    tool_safefree(per->heads.filename);
+    curlx_safefree(per->heads.filename);
 
   if(per->etag_save.fopened && per->etag_save.stream)
     curlx_fclose(per->etag_save.stream);
 
   if(per->etag_save.alloc_filename)
-    tool_safefree(per->etag_save.filename);
+    curlx_safefree(per->etag_save.filename);
 
-  curl_easy_cleanup(per->curl);
   if(outs->alloc_filename)
-    curlx_free(outs->filename);
-  curlx_free(per->url);
-  curlx_free(per->outfile);
-  curlx_free(per->uploadfile);
+    curlx_safefree(outs->filename);
   curl_slist_free_all(per->hdrcbdata.headlist);
   per->hdrcbdata.headlist = NULL;
   return result;
@@ -845,12 +861,18 @@ static CURLcode append2query(struct OperationConfig *config,
       char *updated = NULL;
       uerr = curl_url_set(uh, CURLUPART_QUERY, q, CURLU_APPENDQUERY);
       if(!uerr)
-        uerr = curl_url_get(uh, CURLUPART_URL, &updated, CURLU_GUESS_SCHEME);
+        uerr = curl_url_get(uh, CURLUPART_URL, &updated,
+                            CURLU_NO_GUESS_SCHEME);
       if(uerr)
         result = urlerr_cvt(uerr);
       else {
+        /* use our new URL instead! */
         curlx_free(per->url); /* free previous URL */
-        per->url = updated; /* use our new URL instead! */
+        /* make it allocated by tool memory */
+        per->url = curlx_strdup(updated);
+        curl_free(updated);
+        if(!per->url)
+          result = CURLE_OUT_OF_MEMORY;
       }
     }
     curl_url_cleanup(uh);
@@ -877,11 +899,16 @@ static CURLcode etag_compare(struct OperationConfig *config)
 
   if((PARAM_OK == file2string(&etag_from_file, file)) &&
      etag_from_file) {
-    header = curl_maprintf("If-None-Match: %s", etag_from_file);
-    tool_safefree(etag_from_file);
+    char *h = curl_maprintf("If-None-Match: %s", etag_from_file);
+    curlx_safefree(etag_from_file);
+    if(h) {
+      /* move it to the right memory */
+      header = curlx_strdup(h);
+      curl_free(h);
+    }
   }
   else
-    header = curl_maprintf("If-None-Match: \"\"");
+    header = curlx_strdup("If-None-Match: \"\"");
 
   if(!header) {
     if(file)
@@ -892,7 +919,7 @@ static CURLcode etag_compare(struct OperationConfig *config)
 
   /* add Etag from file to list of custom headers */
   pe = add2list(&config->headers, header);
-  tool_safefree(header);
+  curlx_free(header);
 
   if(file)
     curlx_fclose(file);
@@ -1021,7 +1048,7 @@ static CURLcode setup_outfile(struct OperationConfig *config,
     SANITIZEcode sc;
     CURLcode result =
       glob_match_url(&per->outfile, storefile, &state->urlglob, &sc);
-    tool_safefree(storefile);
+    curlx_safefree(storefile);
     if(sc) {
       if(sc == SANITIZE_ERR_OUT_OF_MEMORY)
         return CURLE_OUT_OF_MEMORY;
@@ -1043,10 +1070,13 @@ static CURLcode setup_outfile(struct OperationConfig *config,
 
   if(config->output_dir && *config->output_dir) {
     char *d = curl_maprintf("%s/%s", config->output_dir, per->outfile);
-    if(!d)
+    curlx_safefree(per->outfile);
+    if(d) {
+      per->outfile = curlx_strdup(d); /* move to right memory */
+      curl_free(d);
+    }
+    if(!d || !per->outfile)
       return CURLE_WRITE_ERROR;
-    curlx_free(per->outfile);
-    per->outfile = d;
   }
   /* Create the directory hierarchy, if not pre-existent to a multiple
      file output call */
@@ -1141,7 +1171,7 @@ static void check_stdin_upload(struct OperationConfig *config,
   if(!strcmp(per->uploadfile, ".")) {
 #if defined(USE_WINSOCK) && !defined(CURL_WINDOWS_UWP)
     /* non-blocking stdin behavior on Windows is challenging
-       Spawn a new thread that will read from stdin and write
+       Spawn a new thread that reads from stdin and write
        out to a socket */
     curl_socket_t f = win32_stdin_read_thread();
 
@@ -1221,7 +1251,7 @@ static CURLcode create_single(struct OperationConfig *config,
 
     if(state->upidx >= state->upnum) {
       state->urlnum = 0;
-      tool_safefree(state->uploadfile);
+      curlx_safefree(state->uploadfile);
       glob_cleanup(&state->inglob);
       state->upidx = 0;
       state->urlnode = u->next; /* next node */
@@ -1274,7 +1304,7 @@ static CURLcode create_single(struct OperationConfig *config,
       per->uploadfile = curlx_strdup(state->uploadfile);
       if(!per->uploadfile ||
          SetHTTPrequest(TOOL_HTTPREQ_PUT, &config->httpreq)) {
-        tool_safefree(per->uploadfile);
+        curlx_safefree(per->uploadfile);
         curl_easy_cleanup(curl);
         return CURLE_FAILED_INIT;
       }
@@ -1344,7 +1374,7 @@ static CURLcode create_single(struct OperationConfig *config,
       }
 
       if(config->resume_from_current)
-        config->resume_from = -1; /* -1 will then force get-it-yourself */
+        config->resume_from = -1; /* -1 then forces get-it-yourself */
     }
 
     if(!outs->out_null && output_expected(per->url, per->uploadfile) &&
@@ -1392,7 +1422,7 @@ static CURLcode create_single(struct OperationConfig *config,
       state->urlidx = state->urlnum = 0;
       glob_cleanup(&state->urlglob);
       state->upidx++;
-      tool_safefree(state->uploadfile); /* clear it to get the next */
+      curlx_safefree(state->uploadfile); /* clear it to get the next */
     }
     *added = TRUE;
     break;
@@ -1489,7 +1519,7 @@ static CURLcode add_parallel_transfers(CURLM *multi, CURLSH *share,
       return result;
 
     /* parallel connect means that we do not set PIPEWAIT since pipewait
-       will make libcurl prefer multiplexing */
+       makes libcurl prefer multiplexing */
     (void)curl_easy_setopt(per->curl, CURLOPT_PIPEWAIT,
                            global->parallel_connect ? 0L : 1L);
     (void)curl_easy_setopt(per->curl, CURLOPT_PRIVATE, per);
@@ -1711,6 +1741,29 @@ static CURLcode parallel_event(struct parastate *s)
                            &s->still_running);
 
   while(!s->mcode && (s->still_running || s->more_transfers)) {
+
+    if(!s->still_running && s->more_transfers) {
+      curl_off_t nxfers;
+      /* None are running, but there may be more ready to run. Try
+       * to add more when possible. */
+      s->result = add_parallel_transfers(s->multi, s->share,
+                                         &s->more_transfers,
+                                         &s->added_transfers);
+      if(s->result)
+        break;
+      if(s->more_transfers) {
+        /* There are still more transfers, so not all were added. If we
+         * did not add *any*, it means there is nothing to do until time
+         * passes and a transfer becomes ready to add.
+         * Avoid busy looping by taking a small break. */
+        CURLMcode mcode = curl_multi_get_offt(
+          s->multi, CURLMINFO_XFERS_CURRENT, &nxfers);
+        if(!mcode && !nxfers) {
+          /* None have been added, must be waiting on a timeout */
+          curlx_wait_ms(500);
+        }
+      }
+    }
 #if DEBUG_UV
     curl_mfprintf(tool_stderr, "parallel_event: uv_run(), "
                   "mcode=%d, %d running, %d more\n",
@@ -1746,7 +1799,7 @@ static CURLcode parallel_event(struct parastate *s)
   }
 
   /* We need to cleanup the multi here, since the uv context lives on the
-   * stack and will be gone. multi_cleanup can trigger events! */
+   * stack and about to be gone. multi_cleanup can trigger events! */
   curl_multi_cleanup(s->multi);
 
 #if DEBUG_UV
@@ -1769,7 +1822,7 @@ static CURLcode check_finished(struct parastate *s)
     msg = curl_multi_info_read(s->multi, &rc);
     if(msg) {
       bool retry;
-      long delay;
+      uint32_t delay;
       struct per_transfer *ended;
       CURL *easy = msg->easy_handle;
       CURLcode tres = msg->data.result;
@@ -1864,8 +1917,13 @@ static CURLcode parallel_transfers(CURLSH *share)
   if(!s->multi)
     return CURLE_OUT_OF_MEMORY;
 
+#ifndef DEBUGBUILD
+  (void)curl_multi_setopt(s->multi, CURLMOPT_QUICK_EXIT, 1L);
+#endif
   (void)curl_multi_setopt(s->multi, CURLMOPT_NOTIFYFUNCTION, mnotify);
   (void)curl_multi_setopt(s->multi, CURLMOPT_NOTIFYDATA, s);
+  (void)curl_multi_setopt(s->multi, CURLMOPT_MAX_HOST_CONNECTIONS, (long)
+                          global->parallel_host);
   (void)curl_multi_notify_enable(s->multi, CURLMNOTIFY_INFO_READ);
 
   result = add_parallel_transfers(s->multi, s->share,
@@ -1901,6 +1959,13 @@ static CURLcode parallel_transfers(CURLSH *share)
           }
           s->wrapitup_processed = TRUE;
         }
+      }
+      else if(s->more_transfers) {
+        s->result = add_parallel_transfers(s->multi, s->share,
+                                           &s->more_transfers,
+                                           &s->added_transfers);
+        if(s->result)
+          break;
       }
 
       s->mcode = curl_multi_poll(s->multi, NULL, 0, 1000, NULL);
@@ -1946,7 +2011,7 @@ static CURLcode serial_transfers(CURLSH *share)
   }
   for(per = transfers; per;) {
     bool retry;
-    long delay_ms;
+    uint32_t delay_ms;
     bool bailout = FALSE;
     struct curltime start;
 
@@ -2117,7 +2182,7 @@ static CURLcode cacertpaths(struct OperationConfig *config)
   }
 
 #ifdef _WIN32
-  if(!env) {
+  if(!config->capath && !config->cacert) {
 #ifdef CURL_CA_SEARCH_SAFE
     char *cacert = NULL;
     FILE *cafile = tool_execpath("curl-ca-bundle.crt", &cacert);
@@ -2138,7 +2203,7 @@ static CURLcode cacertpaths(struct OperationConfig *config)
 #endif
   return CURLE_OK;
 fail:
-  Curl_safefree(config->capath);
+  curlx_safefree(config->capath);
   return result;
 }
 
@@ -2209,7 +2274,7 @@ static CURLcode run_all_transfers(CURLSH *share,
   /* cleanup if there are any left */
   for(per = transfers; per;) {
     bool retry;
-    long delay;
+    uint32_t delay;
     CURLcode result2 = post_per_transfer(per, result, &retry, &delay);
     if(!result)
       /* do not overwrite the original error */
@@ -2294,7 +2359,6 @@ CURLcode operate(int argc, argv_item_t argv[])
     if(found_curlrc) {
       /* After parse_args so notef knows the verbosity */
       notef("Read config file from '%s'", curlrc_path);
-      curlx_free(curlrc_path);
     }
     if(err) {
       result = CURLE_OK;
@@ -2392,7 +2456,7 @@ CURLcode operate(int argc, argv_item_t argv[])
         errorf("out of memory");
     }
   }
-
+  curlx_free(curlrc_path);
   varcleanup();
 
   return result;

@@ -238,11 +238,6 @@ CURLcode Curl_ssl_peer_key_make(struct Curl_cfilter *cf,
     r = cf_ssl_peer_key_add_path(&buf, "Issuer", ssl->issuercert, &is_local);
     if(r)
       goto out;
-    if(ssl->cert_blob) {
-      r = cf_ssl_peer_key_add_hash(&buf, "CertBlob", ssl->cert_blob);
-      if(r)
-        goto out;
-    }
     if(ssl->ca_info_blob) {
       r = cf_ssl_peer_key_add_hash(&buf, "CAInfoBlob", ssl->ca_info_blob);
       if(r)
@@ -253,6 +248,11 @@ CURLcode Curl_ssl_peer_key_make(struct Curl_cfilter *cf,
       if(r)
         goto out;
     }
+  }
+  if(ssl->cert_blob) {
+    r = cf_ssl_peer_key_add_hash(&buf, "CertBlob", ssl->cert_blob);
+    if(r)
+      goto out;
   }
   if(ssl->pinned_key && ssl->pinned_key[0]) {
     r = curlx_dyn_addf(&buf, ":Pinned-%s", ssl->pinned_key);
@@ -401,12 +401,12 @@ static void cf_ssl_scache_clear_peer(struct Curl_ssl_scache_peer *peer)
     peer->sobj = NULL;
   }
   peer->sobj_free = NULL;
-  Curl_safefree(peer->clientcert);
+  curlx_safefree(peer->clientcert);
 #ifdef USE_TLS_SRP
-  Curl_safefree(peer->srp_username);
-  Curl_safefree(peer->srp_password);
+  curlx_safefree(peer->srp_username);
+  curlx_safefree(peer->srp_password);
 #endif
-  Curl_safefree(peer->ssl_peer_key);
+  curlx_safefree(peer->ssl_peer_key);
   peer->age = 0;
   peer->hmac_set = FALSE;
 }
@@ -734,12 +734,19 @@ static CURLcode cf_ssl_add_peer(struct Curl_easy *data,
 
   peer = cf_ssl_get_free_peer(scache);
   if(peer) {
+    char buffer[64];
     const char *ccert = conn_config ? conn_config->clientcert : NULL;
     const char *username = NULL, *password = NULL;
 #ifdef USE_TLS_SRP
     username = conn_config ? conn_config->username : NULL;
     password = conn_config ? conn_config->password : NULL;
 #endif
+    if(!ccert && conn_config && conn_config->cert_blob) {
+      /* when using a client cert blob, create a name for it */
+      curl_msnprintf(buffer, sizeof(buffer),
+                     "cert-%p", conn_config->cert_blob->data);
+      ccert = buffer; /* data is strduped by cf_ssl_scache_peer_init */
+    }
     result = cf_ssl_scache_peer_init(peer, ssl_peer_key, ccert,
                                      username, password, NULL, NULL);
     if(result)

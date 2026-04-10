@@ -154,7 +154,7 @@ static void free_push_headers(struct h2_stream_ctx *stream)
   size_t i;
   for(i = 0; i < stream->push_headers_used; i++)
     curlx_free(stream->push_headers[i]);
-  Curl_safefree(stream->push_headers);
+  curlx_safefree(stream->push_headers);
   stream->push_headers_used = 0;
 }
 
@@ -203,6 +203,7 @@ static void cf_h2_ctx_close(struct cf_h2_ctx *ctx)
 {
   if(ctx->h2) {
     nghttp2_session_del(ctx->h2);
+    ctx->h2 = NULL;
   }
 }
 
@@ -375,6 +376,10 @@ static CURLcode http2_data_setup(struct Curl_cfilter *cf,
 
   (void)cf;
   DEBUGASSERT(data);
+
+  if(!data)
+    return CURLE_BAD_FUNCTION_ARGUMENT;
+
   stream = H2_STREAM_CTX(ctx, data);
   if(stream) {
     *pstream = stream;
@@ -713,7 +718,7 @@ static struct Curl_easy *h2_duphandle(struct Curl_cfilter *cf,
   return second;
 }
 
-static int set_transfer_url(struct Curl_easy *data,
+static int set_transfer_url(struct Curl_easy *data, bool via_ssl_conn,
                             struct curl_pushheaders *hp)
 {
   const char *v;
@@ -727,6 +732,14 @@ static int set_transfer_url(struct Curl_easy *data,
 
   v = curl_pushheader_byname(hp, HTTP_PSEUDO_SCHEME);
   if(v) {
+    if(!via_ssl_conn) {
+      /* PUSH over an insecure connection, accept only insecure schemes. */
+      const struct Curl_scheme *scheme = Curl_get_scheme(v);
+      if(!scheme || (scheme->flags & PROTOPT_SSL)) {
+        rc = 1;
+        goto fail;
+      }
+    }
     uc = curl_url_set(u, CURLUPART_SCHEME, v, 0);
     if(uc) {
       rc = 1;
@@ -806,7 +819,8 @@ static int push_promise(struct Curl_cfilter *cf,
     heads.stream = stream;
     heads.frame = frame;
 
-    rv = set_transfer_url(newhandle, &heads);
+    rv = set_transfer_url(newhandle,
+                          Curl_conn_is_ssl(cf->conn, cf->sockindex), &heads);
     if(rv) {
       CURL_TRC_CF(data, cf, "[%d] PUSH_PROMISE, failed to set URL -> %d",
                   frame->promised_stream_id, rv);
@@ -1010,7 +1024,7 @@ static CURLcode on_stream_frame(struct Curl_cfilter *cf,
     Curl_multi_mark_dirty(data);
     break;
   case NGHTTP2_WINDOW_UPDATE:
-    if(CURL_WANT_SEND(data) && Curl_bufq_is_empty(&stream->sendbuf)) {
+    if(CURL_REQ_WANT_SEND(data) && Curl_bufq_is_empty(&stream->sendbuf)) {
       /* need more data, force processing of transfer */
       Curl_multi_mark_dirty(data);
     }
@@ -1187,7 +1201,7 @@ static int on_frame_recv(nghttp2_session *session, const nghttp2_frame *frame,
          * window and *assume* that we treat this like a WINDOW_UPDATE. Some
          * servers send an explicit WINDOW_UPDATE, but not all seem to do that.
          * To be safe, we UNHOLD a stream in order not to stall. */
-        if(CURL_WANT_SEND(data))
+        if(CURL_REQ_WANT_SEND(data))
           Curl_multi_mark_dirty(data);
       }
       break;
@@ -1474,8 +1488,11 @@ static int on_header(nghttp2_session *session, const nghttp2_frame *frame,
       stream->push_headers = headp;
     }
     h = curl_maprintf("%s:%s", name, value);
-    if(h)
-      stream->push_headers[stream->push_headers_used++] = h;
+    if(!h) {
+      free_push_headers(stream);
+      return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+    stream->push_headers[stream->push_headers_used++] = h;
     return 0;
   }
 
@@ -1692,9 +1709,9 @@ static CURLcode http2_handle_stream_close(struct Curl_cfilter *cf,
         stream->close_handled = TRUE;
         return CURLE_OK;
     }
-    failf(data, "HTTP/2 stream %" PRIu32 " reset by %s (error 0x%" PRIx32
-          " %s)", stream->id, stream->reset_by_server ? "server" : "curl",
-           stream->error, nghttp2_http2_strerror(stream->error));
+    failf(data, "HTTP/2 stream %u reset by %s (error 0x%x %s)",
+          stream->id, stream->reset_by_server ? "server" : "curl",
+          stream->error, nghttp2_http2_strerror(stream->error));
     return stream->error ? CURLE_HTTP2_STREAM :
            (data->req.bytecount ? CURLE_PARTIAL_FILE : CURLE_HTTP2);
   }
@@ -1817,7 +1834,7 @@ out:
   /* Defer flushing during the connect phase so that the SETTINGS and
    * other initial frames are sent together with the first request.
    * Unless we are 'connect_only' where the request will never come. */
-  if(!cf->connected && !cf->conn->connect_only)
+  if(!cf->connected && !cf->conn->bits.connect_only)
     return CURLE_OK;
   return nw_out_flush(cf, data);
 }
@@ -1940,9 +1957,14 @@ static CURLcode cf_h2_recv(struct Curl_cfilter *cf, struct Curl_easy *data,
                            char *buf, size_t len, size_t *pnread)
 {
   struct cf_h2_ctx *ctx = cf->ctx;
-  struct h2_stream_ctx *stream = H2_STREAM_CTX(ctx, data);
+  struct h2_stream_ctx *stream;
   CURLcode result, r2;
   struct cf_call_data save;
+
+  if(!data)
+    return CURLE_HTTP2;
+
+  stream = H2_STREAM_CTX(ctx, data);
 
   *pnread = 0;
   if(!stream) {
@@ -1986,7 +2008,7 @@ out:
     /* pending data to send, need to be called again. Ideally, we
      * monitor the socket for POLLOUT, but when not SENDING
      * any more, we force processing of the transfer. */
-    if(!CURL_WANT_SEND(data))
+    if(!CURL_REQ_WANT_SEND(data))
       Curl_multi_mark_dirty(data);
   }
   else if(r2) {
@@ -2180,7 +2202,7 @@ static CURLcode h2_submit(struct h2_stream_ctx **pstream,
 out:
   CURL_TRC_CF(data, cf, "[%d] submit -> %d, %zu",
               stream ? stream->id : -1, result, *pnwritten);
-  Curl_safefree(nva);
+  curlx_safefree(nva);
   *pstream = stream;
   Curl_dynhds_free(&h2_headers);
   return result;
