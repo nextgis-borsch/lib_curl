@@ -48,7 +48,7 @@ jobs:
         with:
           persist-credentials: false
       - name: 'cmake'
-        uses: cross-platform-actions/action@492b0c80085400348c599edace11141a4ee73524 # v0.32.0
+        uses: cross-platform-actions/action@233156312992f3f169d8d0c633c21d12a5d30455 # v1.0.0
         env:
           MATRIX_ARCH: '${{ matrix.arch }}'
         with:
@@ -93,7 +93,7 @@ jobs:
         with:
           persist-credentials: false
       - name: 'cmake'
-        uses: cross-platform-actions/action@492b0c80085400348c599edace11141a4ee73524 # v0.32.0
+        uses: cross-platform-actions/action@233156312992f3f169d8d0c633c21d12a5d30455 # v1.0.0
         env:
           MATRIX_ARCH: '${{ matrix.arch }}'
         with:
@@ -143,7 +143,7 @@ jobs:
         with:
           persist-credentials: false
       - name: '${{ matrix.build }}'
-        uses: cross-platform-actions/action@492b0c80085400348c599edace11141a4ee73524 # v0.32.0
+        uses: cross-platform-actions/action@233156312992f3f169d8d0c633c21d12a5d30455 # v1.0.0
         env:
           CC: '${{ matrix.compiler }}'
           CURL_TEST_MIN: 1800
@@ -349,7 +349,7 @@ jobs:
         run: sudo apt-get -o Dpkg::Use-Pty=0 install libfl2
 
       - name: 'cache compiler (djgpp)'
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         id: cache-compiler
         with:
           path: ~/djgpp
